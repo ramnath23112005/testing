@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+
+  /* Dark slate-navy chrome (softened contrast) */
+  --color-navy-950: #070b13;
+  --color-navy-900: #0e1526;
+  --color-navy-850: #131c30;
+  --color-navy-800: #1a2439;
+  --color-navy-700: #25314b;
+
+  /* Solar-energy green (primary accent, used sparingly) */
+  --color-solar-50: #eefdf3;
+  --color-solar-100: #d7f9e3;
+  --color-solar-200: #b2f1cc;
+  --color-solar-300: #7ee3ae;
+  --color-solar-400: #2ec98a;
+  --color-solar-500: #00a86b;
+  --color-solar-600: #0b8a58;
+  --color-solar-700: #0a6d47;
+  --color-solar-800: #0d5739;
+  --color-solar-900: #0e4c32;
+
+  --color-surface: #f4f7f9;
+  --color-panel: #ffffff;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface);
+  color: #0f172a;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  border-color: #e2e8f0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-solar-600);
+  outline-offset: 2px;
+}
+
+/* Brighter focus ring on the dark chrome (sidebar / navbar) */
+aside :focus-visible,
+header :focus-visible {
+  outline-color: var(--color-solar-400);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

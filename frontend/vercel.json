@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://soilingguard-pv-soiling-cleaning.onrender.com/api/:path*" },
+    { "source": "/media/:path*", "destination": "https://soilingguard-pv-soiling-cleaning.onrender.com/media/:path*" },
+    { "source": "/((?!api/|media/).*)", "destination": "/index.html" }
+  ]
+}

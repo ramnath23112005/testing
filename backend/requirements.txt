@@ -1,0 +1,17 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+SQLAlchemy>=2.0,<3.0
+pydantic>=2.7,<3.0
+pydantic-settings>=2.2,<3.0
+python-multipart>=0.0.9
+PyJWT>=2.8,<3.0
+httpx>=0.27,<1.0
+Pillow>=10.0
+numpy>=1.26
+pytest>=8.0
+
+# --- optional / production extras (uncomment as needed) ---
+# psycopg[binary]>=3.1     # PostgreSQL driver
+# paho-mqtt>=2.0           # real IoT telemetry via MQTT broker
+# opencv-python>=4.9       # accelerated image quality checks
+# torch>=2.2               # real CNN inference (weights must be supplied)
