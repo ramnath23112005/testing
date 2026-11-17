@@ -253,6 +253,7 @@ def device_telemetry(
                 "ambient_temp_c": r.ambient_temp_c,
                 "humidity_pct": r.humidity_pct,
                 "irradiance_wm2": r.irradiance_wm2,
+                "light_level": r.light_level,
                 "source": r.source,
                 "quality": r.quality,
             }

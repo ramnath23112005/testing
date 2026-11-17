@@ -94,6 +94,7 @@ class TelemetryPoint(BaseModel):
     ambient_temp_c: float | None = None
     humidity_pct: float | None = None
     irradiance_wm2: float | None = None
+    light_level: float | None = None
     source: DataSource = "simulated"
     quality: Literal["good", "stale", "missing"] = "good"
 

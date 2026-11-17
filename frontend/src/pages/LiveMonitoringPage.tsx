@@ -131,19 +131,32 @@ function StatTiles({ points, source }: { points: TelemetryPoint[]; source: "meas
   const power = stats("power_w");
   const voltage = stats("voltage_v");
   const current = stats("current_a");
+  // The ESP32 reports a relative LDR index (%), not W/m2 irradiance. Show whichever
+  // signal the device actually provides instead of inventing an irradiance value.
+  const hasIrradiance = nums("irradiance_wm2").length > 0;
+  const hasLight = nums("light_level").length > 0;
 
   const tiles = [
     { label: "Power now", value: latest?.power_w, unit: "W", s: power, digits: 0, color: SERIES.power },
     { label: "Voltage now", value: latest?.voltage_v, unit: "V", s: voltage, digits: 1, color: SERIES.voltage },
     { label: "Current now", value: latest?.current_a, unit: "A", s: current, digits: 2, color: SERIES.current },
-    {
-      label: "Irradiance now",
-      value: latest?.irradiance_wm2,
-      unit: "W/m²",
-      s: stats("irradiance_wm2"),
-      digits: 0,
-      color: SERIES.irradiance,
-    },
+    hasIrradiance || !hasLight
+      ? {
+          label: "Irradiance now",
+          value: latest?.irradiance_wm2,
+          unit: "W/m²",
+          s: stats("irradiance_wm2"),
+          digits: 0,
+          color: SERIES.irradiance,
+        }
+      : {
+          label: "Light level now",
+          value: latest?.light_level,
+          unit: "%",
+          s: stats("light_level"),
+          digits: 0,
+          color: SERIES.irradiance,
+        },
   ];
 
   return (

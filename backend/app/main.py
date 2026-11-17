@@ -27,6 +27,7 @@ from .routers import (
     devices,
     events,
     export,
+    iot,
     system,
     ws,
 )
@@ -149,7 +150,7 @@ def create_app() -> FastAPI:
 
     for router in (auth.router, system.router, devices.router, ai.router, decision.router,
                    cleaning.router, analytics.router, events.router, alerts.router,
-                   settings_router.router, export.router):
+                   settings_router.router, export.router, iot.router):
         app.include_router(router)
     app.include_router(ws.router)
 

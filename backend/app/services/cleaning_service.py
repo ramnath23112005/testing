@@ -201,12 +201,22 @@ class CleaningService:
             reference=job.id,
         )
         db.expire(job)
+        job_id = job.id
+
+        # Hardware devices execute the cycle themselves: the firmware polls
+        # GET /api/cleaning/command and reports back through POST /api/cleaning/result.
+        # Spawning the simulator thread here would fake a cycle that never happened.
+        if not simulated:
+            queued = db.get(CleaningJob, job_id)
+            return (
+                job_out(queued) if queued else {},
+                "Command queued; awaiting acknowledgement from the device.",
+            )
 
         stop_flag = threading.Event()
         with self._lock:
             self._stop_flags[device_id] = stop_flag
 
-        job_id = job.id
         thread = threading.Thread(
             target=self._run_cycle,
             args=(job_id, device_id, simulated, stop_flag),
@@ -215,11 +225,7 @@ class CleaningService:
         )
         thread.start()
 
-        detail = (
-            f"Simulated cycle queued ({'demo actuator' if simulated else 'hardware command'})."
-            if simulated
-            else "Command published to the device; awaiting acknowledgement."
-        )
+        detail = f"Simulated cycle queued ({'demo actuator' if simulated else 'hardware command'})."
         job = db.get(CleaningJob, job_id)
         return (job_out(job) if job else {}, detail)
 
@@ -444,6 +450,13 @@ class CleaningService:
             flag = self._stop_flags.get(device_id)
         if flag is not None:
             flag.set()
+        elif not job.simulated and job.status == "running":
+            # Hardware cycle: keep the job open so the device receives a STOP
+            # command from GET /api/cleaning/command and reports via
+            # POST /api/cleaning/result. Never claim the motor stopped here.
+            job.error = "STOP_REQUESTED"
+            job.acknowledged = False
+            db.commit()
         else:
             # no runtime thread (e.g. after restart) - force finalise
             job.status = "stopped"

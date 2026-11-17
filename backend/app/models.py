@@ -111,6 +111,8 @@ class TelemetryReading(Base):
     ambient_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     irradiance_wm2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Relative light index (0-100 % of the LDR's calibrated range) - NOT W/m2 irradiance.
+    light_level: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="simulated")  # measured|simulated|estimated|demo
     quality: Mapped[str] = mapped_column(String(16), default="good")  # good|stale|missing
 

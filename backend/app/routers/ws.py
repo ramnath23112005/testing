@@ -33,6 +33,7 @@ def _point(row: TelemetryReading) -> dict:
         "ambient_temp_c": row.ambient_temp_c,
         "humidity_pct": row.humidity_pct,
         "irradiance_wm2": row.irradiance_wm2,
+        "light_level": row.light_level,
         "source": row.source,
         "quality": row.quality,
     }

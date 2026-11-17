@@ -42,7 +42,7 @@ DEMO_IMAGES: list[tuple[int, int, str, str]] = [
     (0, 9, "clean", "clean"),
 ]
 
-# Demo accounts from earlier builds - removed so Ramnath is the only user.
+# Demo accounts from earlier builds - removed so Ramnath is the only regular user.
 LEGACY_SEED_USERNAMES = ("admin", "operator", "viewer")
 
 
@@ -57,6 +57,7 @@ def _media_root():
 def seed_users(db: Session) -> None:
     accounts = [
         (settings.seed_ramnath_username, settings.seed_ramnath_password, "Ramnath", "admin"),
+        (settings.seed_test_username, settings.seed_test_password, "Test (hardware bench)", "admin"),
     ]
     for username, password, full_name, role in accounts:
         existing = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
@@ -106,6 +107,51 @@ def seed_device(db: Session) -> Device:
         db.add(device)
         db.commit()
         db.refresh(device)
+    return device
+
+
+def seed_hardware_device(db: Session) -> Device:
+    """Register the ESP32 bench device so it is visible before the first heartbeat.
+
+    It is explicitly *not* simulated, so the demo simulator never writes readings
+    for it - the dashboard only shows what the firmware actually reports.
+    """
+    device_id = settings.iot_default_device_id or "PV-ESP32-01"
+    device = db.get(Device, device_id)
+    if device is None:
+        device = Device(
+            id=device_id,
+            display_name="Solar Array B (ESP32 hardware)",
+            location="Bench prototype",
+            status="offline",
+            panel_rating_w=100.0,
+            camera_status="ok",
+            electrical_sensor_status="unknown",
+            controller_status="ok",
+            firmware_version=None,
+            telemetry_topic=f"{settings.mqtt_topic_prefix}/{device_id}/telemetry",
+            command_topic=f"{settings.mqtt_topic_prefix}/{device_id}/command",
+            simulated=False,
+            active=True,
+            has_irradiance_sensor=False,
+            has_climate_sensor=True,
+            actuator_type="motor",
+        )
+        device.modules.append(
+            PvModule(device_id=device_id, name="Module A", rated_power_w=100.0, vmp_v=18.0, imp_a=5.5,
+                     technology="poly")
+        )
+        db.add(device)
+        db.commit()
+        db.refresh(device)
+        log_event(
+            db,
+            "device_registered",
+            "ESP32 hardware device registered. Awaiting firmware heartbeat.",
+            device_id=device_id,
+            status="info",
+            actor="seed",
+        )
     return device
 
 
@@ -278,7 +324,8 @@ def seed_first_run(db: Session) -> None:
 def seed_all(db: Session) -> dict:
     seed_users(db)
     device = seed_device(db)
+    hardware = seed_hardware_device(db)
     seed_month_history(db, device)
     images = seed_demo_imagery(db, device)
     seed_first_run(db)
-    return {"device": device.id, "demo_images": images}
+    return {"device": device.id, "hardware_device": hardware.id, "demo_images": images}

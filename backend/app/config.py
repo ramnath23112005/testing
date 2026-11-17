@@ -28,9 +28,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 720
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173"
 
-    # seed account (single user - the frontend signs itself in automatically)
+    # seed accounts (single user - the frontend signs itself in automatically)
     seed_ramnath_username: str = "Ramnath"
     seed_ramnath_password: str = "Ramnath"
+    seed_test_username: str = "Test"
+    seed_test_password: str = "Test"
 
     # demo / simulation
     demo_mode: bool = True
@@ -54,6 +56,10 @@ class Settings(BaseSettings):
     mqtt_password: str = ""
     mqtt_topic_prefix: str = "soilingguard"
     mqtt_enabled: bool = False
+
+    # ESP32 firmware REST bridge (X-Device-Key header). Change before going live.
+    iot_device_key: str = "soilingguard-esp32-key"
+    iot_default_device_id: str = "PV-ESP32-01"
 
     # limits
     login_rate_limit_per_minute: int = 10

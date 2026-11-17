@@ -105,6 +105,7 @@ export interface TelemetryPoint {
   ambient_temp_c: number | null;
   humidity_pct: number | null;
   irradiance_wm2: number | null;
+  light_level?: number | null;
   source: DataSource;
   quality: "good" | "stale" | "missing";
 }

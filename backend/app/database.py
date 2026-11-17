@@ -52,3 +52,22 @@ def init_db() -> None:
     from . import models  # noqa: F401  ensure models are registered
 
     Base.metadata.create_all(bind=engine)
+    _lightweight_migrations()
+
+
+def _lightweight_migrations() -> None:
+    """Add columns that were introduced after the first deployment.
+
+    `create_all` never alters existing tables, so a deployment upgraded in place
+    (SQLite on Render, or a local dev database) would otherwise be missing the
+    newer telemetry columns. These ALTERs are safe on SQLite and PostgreSQL.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "telemetry_readings" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("telemetry_readings")}
+    if "light_level" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE telemetry_readings ADD COLUMN light_level FLOAT"))
