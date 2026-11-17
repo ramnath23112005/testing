@@ -5,9 +5,12 @@ import {
   Database,
   Loader2,
   Lock,
+  LogOut,
   Save,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
+  UserRound,
   Users,
   Waves,
 } from "lucide-react";
@@ -111,7 +114,7 @@ function NumberField({
 }
 
 export default function SettingsPage() {
-  const { hasRole, user } = useAuth();
+  const { hasRole, user, logout } = useAuth();
   const { toast } = useToast();
   const [draft, setDraft] = React.useState<Draft>({});
   const [saving, setSaving] = React.useState(false);
@@ -259,6 +262,43 @@ export default function SettingsPage() {
           ))}
         </div>
       )}
+
+      <Section
+        icon={<UserRound className="h-4 w-4" />}
+        title="Account & profile"
+        description="The account signed in on this device"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-solar-500 to-solar-700 text-sm font-semibold text-white"
+            >
+              {(user?.full_name ?? user?.username ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-sm font-semibold text-slate-800">
+                {user?.full_name ?? user?.username}
+              </p>
+              <p className="truncate text-xs text-slate-500">@{user?.username}</p>
+            </div>
+            <Badge variant="dark" size="sm">
+              <ShieldCheck className="h-3 w-3" /> {user?.role}
+            </Badge>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={logout}
+            className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Sign out
+          </Button>
+        </div>
+        <p className="text-[11px] text-slate-400">
+          Signing out clears the stored session on this browser. You can sign in again from the signed-out screen.
+        </p>
+      </Section>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Section

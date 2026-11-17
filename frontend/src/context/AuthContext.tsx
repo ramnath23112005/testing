@@ -7,11 +7,25 @@ import type { User } from "@/lib/types";
 const AUTO_USERNAME = "Ramnath";
 const AUTO_PASSWORD = "Ramnath";
 
+// An explicit sign-out must survive the automatic sign-in (and a page reload)
+// until the user asks to sign in again.
+const SIGNED_OUT_KEY = "soilingguard.signed_out";
+
+function getSignedOut(): boolean {
+  return localStorage.getItem(SIGNED_OUT_KEY) === "1";
+}
+
+function setSignedOutFlag(value: boolean) {
+  if (value) localStorage.setItem(SIGNED_OUT_KEY, "1");
+  else localStorage.removeItem(SIGNED_OUT_KEY);
+}
+
 interface AuthContextValue {
   user: User | null;
   token: string | null;
   initializing: boolean;
   authError: string | null;
+  signedOut: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   retry: () => void;
@@ -26,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initializing, setInitializing] = React.useState<boolean>(true);
   const [authError, setAuthError] = React.useState<string | null>(null);
   const [retryTick, setRetryTick] = React.useState(0);
+  const [signedOut, setSignedOutState] = React.useState<boolean>(() => getSignedOut());
   const blockedRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -65,6 +80,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (token || blockedRef.current) return;
+    if (signedOut) {
+      setInitializing(false);
+      return;
+    }
     let cancelled = false;
     setInitializing(true);
     api
@@ -86,9 +105,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [token, retryTick]);
+  }, [token, retryTick, signedOut]);
 
   const login = React.useCallback(async (username: string, password: string) => {
+    setSignedOutFlag(false);
+    setSignedOutState(false);
     const res = await api.login(username, password);
     setSession(res.access_token, res.user);
     setToken(res.access_token);
@@ -99,10 +120,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearSession();
     setUser(null);
     setToken(null);
+    setSignedOutFlag(true);
+    setSignedOutState(true);
+    setAuthError(null);
   }, []);
 
   const retry = React.useCallback(() => {
     blockedRef.current = false;
+    setSignedOutFlag(false);
+    setSignedOutState(false);
     setAuthError(null);
     setRetryTick((t) => t + 1);
   }, []);
@@ -116,8 +142,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = React.useMemo(
-    () => ({ user, token, initializing, authError, login, logout, retry, hasRole }),
-    [user, token, initializing, authError, login, logout, retry, hasRole],
+    () => ({ user, token, initializing, authError, signedOut, login, logout, retry, hasRole }),
+    [user, token, initializing, authError, signedOut, login, logout, retry, hasRole],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

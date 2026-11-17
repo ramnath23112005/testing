@@ -47,7 +47,7 @@ export function AppShell() {
 }
 
 export function RequireAuth({ children }: { children?: React.ReactNode }) {
-  const { user, token, initializing, authError, retry } = useAuth();
+  const { user, token, initializing, authError, signedOut, retry } = useAuth();
 
   if (initializing) {
     return (
@@ -64,12 +64,16 @@ export function RequireAuth({ children }: { children?: React.ReactNode }) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface px-4">
         <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <h1 className="text-base font-semibold text-slate-900">Automatic sign-in failed</h1>
+          <h1 className="text-base font-semibold text-slate-900">
+            {signedOut ? "Signed out" : "Automatic sign-in failed"}
+          </h1>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            {authError ?? "Could not reach the API server. Check that the backend is running."}
+            {signedOut
+              ? "Your session has ended on this device. Sign in again to resume monitoring."
+              : (authError ?? "Could not reach the API server. Check that the backend is running.")}
           </p>
           <Button className="mt-5 w-full" onClick={retry}>
-            Try again
+            {signedOut ? "Sign in again" : "Try again"}
           </Button>
         </div>
       </div>
