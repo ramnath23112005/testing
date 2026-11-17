@@ -12,6 +12,8 @@ import {
   Loader2,
   ScanSearch,
   Trash2,
+  Video,
+  VideoOff,
   XCircle,
 } from "lucide-react";
 import { api, mediaUrl } from "@/lib/api";
@@ -548,13 +550,243 @@ function HistoryList({
   );
 }
 
+/* ----------------------------- IP webcam ------------------------------- */
+const CAMERA_URL_KEY = "soilingguard.camera_url";
+const CAMERA_DEFAULT = "http://192.168.1.100:8080";
+
+function cameraBase(raw: string): string {
+  let value = raw.trim();
+  if (!value) return "";
+  if (!/^https?:\/\//i.test(value)) value = `http://${value}`;
+  return value
+    .replace(/\/+$/, "")
+    .replace(/\/(video|videofeed|shot|shot\.jpg|photo|photo\.jpg)$/i, "");
+}
+
+type CameraState = "idle" | "connecting" | "live" | "error";
+
+const CAMERA_LABEL: Record<CameraState, string> = {
+  idle: "not connected",
+  connecting: "connecting",
+  live: "live",
+  error: "no signal",
+};
+
+const CAMERA_DOT: Record<CameraState, string> = {
+  idle: "bg-slate-300",
+  connecting: "bg-amber-400 animate-pulse",
+  live: "bg-emerald-500",
+  error: "bg-red-500",
+};
+
+function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabled?: boolean }) {
+  const { toast } = useToast();
+  const [address, setAddress] = React.useState(() => localStorage.getItem(CAMERA_URL_KEY) ?? CAMERA_DEFAULT);
+  const [connected, setConnected] = React.useState<string | null>(null);
+  const [state, setState] = React.useState<CameraState>("idle");
+  const [message, setMessage] = React.useState<string | null>(null);
+  const [viaApi, setViaApi] = React.useState(false);
+  const [capturing, setCapturing] = React.useState(false);
+  const imgRef = React.useRef<HTMLImageElement>(null);
+  const httpsPage = typeof window !== "undefined" && window.location.protocol === "https:";
+
+  const base = cameraBase(address);
+  const streamUrl = base ? (viaApi ? api.cameraStreamUrl(`${base}/video`) : `${base}/video`) : "";
+  const snapshotUrl = base ? `${base}/shot.jpg` : "";
+  const mixedContent = httpsPage && base.startsWith("http://") && !viaApi;
+
+  React.useEffect(() => {
+    if (state !== "connecting") return;
+    const started = Date.now();
+    const id = window.setInterval(() => {
+      const img = imgRef.current;
+      if (img && img.naturalWidth > 0) {
+        setState("live");
+        setMessage(null);
+      } else if (Date.now() - started > 9000) {
+        setState("error");
+        setMessage(
+          mixedContent
+            ? "This page is HTTPS and the browser blocks plain-HTTP camera streams. Tick “Route through the API server”, or open the app on http://localhost:5173."
+            : "No frames received. Check the address and make sure the phone and this computer share the same Wi-Fi.",
+        );
+      }
+    }, 400);
+    return () => window.clearInterval(id);
+  }, [state, mixedContent]);
+
+  function connect() {
+    const next = cameraBase(address);
+    if (!next) {
+      setMessage("Enter the address shown in the IP Webcam app, e.g. http://192.168.1.100:8080");
+      return;
+    }
+    localStorage.setItem(CAMERA_URL_KEY, address);
+    setMessage(null);
+    setConnected(next);
+    setState("connecting");
+  }
+
+  function disconnect() {
+    setConnected(null);
+    setState("idle");
+    setMessage(null);
+  }
+
+  async function capture() {
+    if (!snapshotUrl) return;
+    setCapturing(true);
+    setMessage(null);
+    try {
+      let blob: Blob | null = null;
+      if (!viaApi) {
+        try {
+          const res = await fetch(snapshotUrl, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          blob = await res.blob();
+        } catch {
+          blob = null;
+        }
+      }
+      if (!blob) blob = await api.cameraSnapshot(snapshotUrl);
+      if (!blob.type.startsWith("image/")) throw new Error("The camera did not return an image.");
+      onFrame(new File([blob], `webcam-${Date.now()}.jpg`, { type: blob.type || "image/jpeg" }));
+      toast({ title: "Frame captured", description: "Press “Analyze panel” to classify it.", variant: "success" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Capture failed";
+      setMessage(msg);
+      toast({ title: "Could not capture a frame", description: msg, variant: "error" });
+    } finally {
+      setCapturing(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <Video className="h-3.5 w-3.5 text-solar-600" /> Live IP camera
+        </p>
+        <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
+          <span className={cn("h-1.5 w-1.5 rounded-full", CAMERA_DOT[state])} />
+          {CAMERA_LABEL[state]}
+        </span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-end gap-2">
+        <div className="min-w-[200px] flex-1">
+          <Label className="text-[10px]">Camera address (IP Webcam app)</Label>
+          <Input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") connect();
+            }}
+            placeholder={CAMERA_DEFAULT}
+            className="mt-1 h-9 font-mono text-xs"
+            disabled={state === "live" || disabled}
+            spellCheck={false}
+            aria-label="Camera address"
+          />
+        </div>
+        {connected ? (
+          <Button variant="outline" size="sm" className="h-9" onClick={disconnect}>
+            <VideoOff className="h-3.5 w-3.5" /> Disconnect
+          </Button>
+        ) : (
+          <Button size="sm" className="h-9" onClick={connect} disabled={disabled}>
+            <Video className="h-3.5 w-3.5" /> Connect
+          </Button>
+        )}
+      </div>
+
+      {connected && (
+        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
+          {state !== "live" && (
+            <div className="flex h-44 flex-col items-center justify-center gap-2 text-slate-300">
+              {state === "connecting" ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="px-4 text-center text-xs">Connecting to {connected}…</span>
+                </>
+              ) : (
+                <>
+                  <VideoOff className="h-5 w-5" />
+                  <span className="px-4 text-center text-xs">Stream not available.</span>
+                </>
+              )}
+            </div>
+          )}
+          <img
+            ref={imgRef}
+            key={streamUrl}
+            src={streamUrl}
+            alt="Live panel camera"
+            className={cn("max-h-72 w-full object-contain", state !== "live" && "hidden")}
+            onError={() => {
+              setState("error");
+              setMessage(
+                mixedContent
+                  ? "This page is HTTPS and the browser blocks plain-HTTP camera streams. Tick “Route through the API server”."
+                  : "The camera stream could not be opened. Check the address and that the camera server is running.",
+              );
+            }}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 bg-slate-800 px-3 py-2">
+            <code className="max-w-[60%] truncate font-mono text-[10px] text-slate-300">{streamUrl}</code>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 text-[11px]"
+              disabled={state !== "live" || capturing || disabled}
+              onClick={() => void capture()}
+              title="Grab the current frame and use it for analysis"
+            >
+              {capturing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              Capture frame
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {message && (
+        <div role="alert" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+          {message}
+        </div>
+      )}
+
+      <label className="mt-2 flex items-start gap-2 text-[11px] text-slate-500">
+        <input
+          type="checkbox"
+          checked={viaApi}
+          onChange={(e) => {
+            setViaApi(e.target.checked);
+            if (state === "live") setState("connecting");
+          }}
+          className="mt-0.5"
+        />
+        <span>
+          Route through the API server — use when the browser blocks the camera (HTTPS page or CORS). Requires the
+          API to run on this network.
+        </span>
+      </label>
+
+      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+        Phone and computer must share the same Wi-Fi. Start the server in the IP Webcam app and paste the address it
+        shows; the live view reads <code className="font-mono">/video</code> and a still frame from{" "}
+        <code className="font-mono">/shot.jpg</code>.
+      </p>
+    </div>
+  );
+}
+
 /* ------------------------------- page ---------------------------------- */
 export default function DetectionPage() {
   const { selectedDeviceId, selectedDevice } = useSystem();
   const { toast } = useToast();
   const [file, setFile] = React.useState<File | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState<"real" | "demo" | "capture" | null>(null);
+  const [busy, setBusy] = React.useState<"real" | "demo" | null>(null);
   const [result, setResult] = React.useState<PredictResponse | null>(null);
   const [historyKey, setHistoryKey] = React.useState(0);
   const previewRef = React.useRef<string | null>(null);
@@ -612,27 +844,6 @@ export default function DetectionPage() {
     }
   }
 
-  async function capture() {
-    if (!selectedDeviceId) return;
-    setBusy("capture");
-    try {
-      const res = await api.captureImage(selectedDeviceId);
-      const blobRes = await fetch(mediaUrl(res.image_url) ?? res.image_url);
-      const blob = await blobRes.blob();
-      const f = new File([blob], `capture-${Date.now()}.jpg`, { type: blob.type || "image/jpeg" });
-      acceptFile(f);
-      toast({ title: "Image captured", description: formatDateTime(res.captured_at), variant: "success" });
-    } catch (e) {
-      toast({
-        title: "Capture failed",
-        description: e instanceof Error ? e.message : "",
-        variant: "error",
-      });
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function loadFromHistory(p: Prediction) {
     try {
       const res = await fetch(mediaUrl(p.image_url) ?? p.image_url);
@@ -663,13 +874,12 @@ export default function DetectionPage() {
   }
 
   const modelAvailable = model.data?.available ?? false;
-  const cameraOk = selectedDevice?.camera_status === "ok" && (selectedDevice?.status === "online" || selectedDevice?.simulated);
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="AI Soiling Detection"
-        description="Upload or capture a panel image, run inference and review per-class probabilities with explainability."
+        description="Upload an image or connect an IP camera, run inference and review per-class probabilities with explainability."
         tooltip={
           <>
             Images are validated server-side (type, size, magic bytes) and re-encoded before storage. A
@@ -747,23 +957,7 @@ export default function DetectionPage() {
               </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!cameraOk || busy !== null}
-                onClick={() => void capture()}
-                title={cameraOk ? "Capture from the connected camera" : "Camera unavailable on this device"}
-              >
-                {busy === "capture" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-                Capture from camera
-              </Button>
-              {!cameraOk && (
-                <span className="text-[11px] text-slate-400">
-                  Camera {selectedDevice ? `status: ${selectedDevice.camera_status}` : "not available"} — upload an image instead.
-                </span>
-              )}
-            </div>
+            <WebcamPanel onFrame={acceptFile} disabled={busy !== null} />
           </CardContent>
         </Card>
 

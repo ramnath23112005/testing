@@ -6,8 +6,11 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -17,7 +20,7 @@ from ..config import get_settings
 from ..database import get_db
 from ..models import AiPrediction, Device, GroundTruthLabel, PanelImage, User
 from ..schemas import ConfirmRequest, PredictionOut, PredictResponse
-from ..security import CurrentUser, require_operator
+from ..security import CurrentUser, decode_token, require_operator
 from ..services import decision_engine
 from ..services.events import log_event
 from ..services.image_gen import generate_panel_image
@@ -43,6 +46,10 @@ RECOMMENDATIONS = {
     "heavily_dusty": "Heavy soiling detected. Cleaning is recommended; verify with electrical measurements before acting.",
     "bird_dropping": "Localized contamination (bird droppings) detected. Spot cleaning is recommended.",
 }
+
+# IP-camera relay (phone running the "IP Webcam" app on the same network).
+CAMERA_TIMEOUT_S = 6.0
+CAMERA_MAX_SNAPSHOT_BYTES = 12 * 1024 * 1024
 
 
 def _aware(dt: datetime) -> datetime:
@@ -301,6 +308,118 @@ def _to_bytes(image: Image.Image) -> bytes:
     buf = io.BytesIO()
     image.save(buf, format="JPEG", quality=88)
     return buf.getvalue()
+
+
+def _validate_camera_url(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        raise HTTPException(status_code=422, detail="Camera address is required.")
+    if "://" not in value:
+        value = f"http://{value}"
+    parsed = urlsplit(value)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=422, detail="Camera address must start with http:// or https://.")
+    if not parsed.hostname:
+        raise HTTPException(status_code=422, detail="Camera address is not a valid URL.")
+    return value
+
+
+def _camera_token_user(token: str | None, db: Session) -> User:
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing camera token.")
+    try:
+        payload = decode_token(token)
+    except Exception:  # noqa: BLE001 - any decode failure is an auth failure
+        raise HTTPException(status_code=401, detail="Invalid camera token.") from None
+    user = db.get(User, int(payload.get("sub", 0)))
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid camera token.")
+    return user
+
+
+@router.get("/camera/snapshot")
+def camera_snapshot(
+    _: CurrentUser,
+    url: str = Query(..., description="Snapshot URL of the phone camera, e.g. http://192.168.1.50:8080/shot.jpg"),
+):
+    """Relay a single camera frame so browsers are not blocked by CORS/mixed content.
+
+    The API host must be able to reach the camera (works when both are on the same network).
+    """
+    target = _validate_camera_url(url)
+    try:
+        with httpx.Client(timeout=CAMERA_TIMEOUT_S, follow_redirects=True) as client:
+            with client.stream("GET", target) as res:
+                if res.status_code >= 400:
+                    raise HTTPException(status_code=502, detail=f"Camera answered HTTP {res.status_code}.")
+                ctype = res.headers.get("content-type", "").split(";")[0].strip().lower()
+                if not ctype.startswith("image/"):
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Camera answered with '{ctype or 'unknown content type'}' instead of an image.",
+                    )
+                body = bytearray()
+                for chunk in res.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > CAMERA_MAX_SNAPSHOT_BYTES:
+                        raise HTTPException(status_code=413, detail="Camera snapshot exceeds 12 MB.")
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Cannot reach the camera at {target} ({type(exc).__name__}). Check the address and make sure "
+                "the phone and the API host are on the same network."
+            ),
+        ) from exc
+    if not body:
+        raise HTTPException(status_code=502, detail="Camera returned an empty snapshot.")
+    return Response(content=bytes(body), media_type=ctype, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/camera/stream")
+def camera_stream(
+    url: str = Query(..., description="MJPEG stream URL of the phone camera, e.g. http://192.168.1.50:8080/video"),
+    token: str | None = Query(default=None, description="Bearer token (an <img> tag cannot send headers)"),
+    db: Session = Depends(get_db),
+):
+    """Relay the phone's MJPEG stream through the API.
+
+    Only useful when the API host shares the camera's network - e.g. running uvicorn locally while the
+    public site is served over HTTPS (browsers block plain-HTTP streams from HTTPS pages).
+    """
+    _camera_token_user(token, db)
+    target = _validate_camera_url(url)
+
+    client = httpx.Client(timeout=httpx.Timeout(10.0, read=60.0), follow_redirects=True)
+    try:
+        res = client.send(client.build_request("GET", target), stream=True)
+    except httpx.HTTPError as exc:
+        client.close()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot reach the camera at {target} ({type(exc).__name__}).",
+        ) from exc
+    if res.status_code >= 400:
+        res.close()
+        client.close()
+        raise HTTPException(status_code=502, detail=f"Camera answered HTTP {res.status_code}.")
+
+    media_type = res.headers.get(
+        "content-type", "multipart/x-mixed-replace; boundary=--SoilingGuardFrame"
+    )
+
+    def relay():
+        try:
+            for chunk in res.iter_raw():
+                if chunk:
+                    yield chunk
+        except httpx.HTTPError:
+            return
+        finally:
+            res.close()
+            client.close()
+
+    return StreamingResponse(relay(), media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/predictions")

@@ -145,6 +145,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return normalizeTimestamps(JSON.parse(text) as T);
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  let res: Response;
+  try {
+    res = await fetch(path, { headers, cache: "no-store" });
+  } catch {
+    throw new ApiError(0, "Cannot reach the API server. Check that the backend is running.");
+  }
+  if (res.status === 401) {
+    clearSession();
+    throw new ApiError(401, "Session expired. Please sign in again.");
+  }
+  if (!res.ok) throw new ApiError(res.status, await parseError(res));
+  return res.blob();
+}
+
 export interface RequestOptions {
   signal?: AbortSignal;
 }
@@ -205,6 +223,8 @@ export const api = {
       "/api/ai/capture",
       { method: "POST", body: JSON.stringify({ device_id: deviceId }) },
     ),
+  cameraSnapshot: (url: string) => requestBlob(`/api/ai/camera/snapshot${buildQuery({ url })}`),
+  cameraStreamUrl: (url: string) => `/api/ai/camera/stream${buildQuery({ url, token: getToken() })}`,
   predictions: (params: { from?: string; to?: string; predicted_class?: string; page?: number; page_size?: number } = {}) =>
     request<{ items: Prediction[]; total: number; page: number; page_size: number }>(
       `/api/ai/predictions${buildQuery(params)}`,
