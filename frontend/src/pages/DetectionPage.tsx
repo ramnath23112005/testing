@@ -7,11 +7,9 @@ import {
   Cpu,
   Eye,
   History,
-  ImageUp,
   Info,
   Loader2,
   ScanSearch,
-  Trash2,
   Video,
   VideoOff,
   XCircle,
@@ -50,83 +48,6 @@ import {
 } from "@/components/shared/indicators";
 import { BarsChart, SERIES } from "@/components/charts/chartkit";
 import type { PredictResponse, Prediction } from "@/lib/types";
-
-const MAX_MB = 8;
-const ACCEPTED = ["image/jpeg", "image/jpg", "image/png"];
-
-function validateFile(file: File): string | null {
-  if (!ACCEPTED.includes(file.type)) return "Only JPG or PNG images are accepted.";
-  if (file.size > MAX_MB * 1024 * 1024) return `File is larger than ${MAX_MB} MB.`;
-  if (file.size < 1024) return "File is too small to be a valid image.";
-  return null;
-}
-
-/* ------------------------------ drop zone ------------------------------ */
-function ImageDropzone({
-  file,
-  onFile,
-  disabled,
-}: {
-  file: File | null;
-  onFile: (f: File) => void;
-  disabled?: boolean;
-}) {
-  const [drag, setDrag] = React.useState(false);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDrag(true);
-      }}
-      onDragLeave={() => setDrag(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDrag(false);
-        if (disabled) return;
-        const f = e.dataTransfer.files?.[0];
-        if (f) onFile(f);
-      }}
-      className={cn(
-        "flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors",
-        drag ? "border-solar-500 bg-solar-50" : "border-slate-300 bg-slate-50",
-        disabled && "opacity-60",
-      )}
-    >
-      <ImageUp className={cn("h-7 w-7", drag ? "text-solar-600" : "text-slate-400")} />
-      <p className="mt-2 text-sm font-medium text-slate-700">
-        {file ? file.name : "Drag & drop a panel image"}
-      </p>
-      <p className="mt-1 text-[11px] text-slate-500">
-        JPG or PNG · max {MAX_MB} MB {file ? `· ${(file.size / 1024).toFixed(0)} KB` : ""}
-      </p>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png"
-        className="sr-only"
-        aria-label="Choose panel image"
-        disabled={disabled}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onFile(f);
-          e.target.value = "";
-        }}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="mt-3"
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
-      >
-        Choose file
-      </Button>
-    </div>
-  );
-}
 
 /* ------------------------------ result card ---------------------------- */
 function ResultCard({ data, onConfirm }: { data: PredictResponse; onConfirm: (cls: string) => void }) {
@@ -579,7 +500,7 @@ const CAMERA_DOT: Record<CameraState, string> = {
   error: "bg-red-500",
 };
 
-function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabled?: boolean }) {
+function WebcamPanel({ onCapture, busy }: { onCapture: (f: File) => Promise<void>; busy?: boolean }) {
   const { toast } = useToast();
   const [address, setAddress] = React.useState(() => localStorage.getItem(CAMERA_URL_KEY) ?? CAMERA_DEFAULT);
   const [connected, setConnected] = React.useState<string | null>(null);
@@ -650,8 +571,7 @@ function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabl
       }
       if (!blob) blob = await api.cameraSnapshot(snapshotUrl);
       if (!blob.type.startsWith("image/")) throw new Error("The camera did not return an image.");
-      onFrame(new File([blob], `webcam-${Date.now()}.jpg`, { type: blob.type || "image/jpeg" }));
-      toast({ title: "Frame captured", description: "Press “Analyze panel” to classify it.", variant: "success" });
+      await onCapture(new File([blob], `webcam-${Date.now()}.jpg`, { type: blob.type || "image/jpeg" }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Capture failed";
       setMessage(msg);
@@ -662,20 +582,17 @@ function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabl
   }
 
   return (
-    <div className="border-t border-slate-100 pt-3">
-      <div className="flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          <Video className="h-3.5 w-3.5 text-solar-600" /> Live IP camera
-        </p>
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-[10px]">Camera address (IP Webcam app)</Label>
         <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
           <span className={cn("h-1.5 w-1.5 rounded-full", CAMERA_DOT[state])} />
           {CAMERA_LABEL[state]}
         </span>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-end gap-2">
+      <div className="mt-1 flex flex-wrap items-center gap-2">
         <div className="min-w-[200px] flex-1">
-          <Label className="text-[10px]">Camera address (IP Webcam app)</Label>
           <Input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
@@ -683,8 +600,8 @@ function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabl
               if (e.key === "Enter") connect();
             }}
             placeholder={CAMERA_DEFAULT}
-            className="mt-1 h-9 font-mono text-xs"
-            disabled={state === "live" || disabled}
+            className="h-9 font-mono text-xs"
+            disabled={state === "live" || busy}
             spellCheck={false}
             aria-label="Camera address"
           />
@@ -694,7 +611,7 @@ function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabl
             <VideoOff className="h-3.5 w-3.5" /> Disconnect
           </Button>
         ) : (
-          <Button size="sm" className="h-9" onClick={connect} disabled={disabled}>
+          <Button size="sm" className="h-9" onClick={connect} disabled={busy}>
             <Video className="h-3.5 w-3.5" /> Connect
           </Button>
         )}
@@ -738,12 +655,16 @@ function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabl
               size="sm"
               variant="secondary"
               className="h-7 text-[11px]"
-              disabled={state !== "live" || capturing || disabled}
+              disabled={state !== "live" || capturing || busy}
               onClick={() => void capture()}
-              title="Grab the current frame and use it for analysis"
+              title="Grab the current frame and classify it"
             >
-              {capturing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-              Capture frame
+              {capturing || busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Camera className="h-3.5 w-3.5" />
+              )}
+              Capture &amp; analyze
             </Button>
           </div>
         </div>
@@ -784,50 +705,22 @@ function WebcamPanel({ onFrame, disabled }: { onFrame: (f: File) => void; disabl
 export default function DetectionPage() {
   const { selectedDeviceId, selectedDevice } = useSystem();
   const { toast } = useToast();
-  const [file, setFile] = React.useState<File | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<"real" | "demo" | null>(null);
   const [result, setResult] = React.useState<PredictResponse | null>(null);
   const [historyKey, setHistoryKey] = React.useState(0);
-  const previewRef = React.useRef<string | null>(null);
 
   const model = useAsync((signal) => api.modelInfo({ signal }), []);
+  const modelAvailable = model.data?.available ?? false;
 
-  const preview = React.useMemo(() => {
-    if (previewRef.current) {
-      URL.revokeObjectURL(previewRef.current);
-      previewRef.current = null;
-    }
-    if (!file) return null;
-    const url = URL.createObjectURL(file);
-    previewRef.current = url;
-    return url;
-  }, [file]);
-
-  React.useEffect(
-    () => () => {
-      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-    },
-    [],
-  );
-
-  function acceptFile(f: File) {
-    const v = validateFile(f);
-    if (v) {
-      setError(v);
-      setFile(null);
-      return;
-    }
+  async function analyzeFrame(f: File) {
+    const demo = !modelAvailable;
     setError(null);
-    setResult(null);
-    setFile(f);
-  }
-
-  async function analyze(demo: boolean) {
-    if (!file) return;
     setBusy(demo ? "demo" : "real");
     try {
-      const res = demo ? await api.predictDemo(file, selectedDeviceId ?? undefined) : await api.predict(file, selectedDeviceId ?? undefined);
+      const res = demo
+        ? await api.predictDemo(f, selectedDeviceId ?? undefined)
+        : await api.predict(f, selectedDeviceId ?? undefined);
       setResult(res);
       setHistoryKey((k) => k + 1);
       toast({
@@ -845,20 +738,13 @@ export default function DetectionPage() {
   }
 
   async function loadFromHistory(p: Prediction) {
-    try {
-      const res = await fetch(mediaUrl(p.image_url) ?? p.image_url);
-      const blob = await res.blob();
-      const f = new File([blob], `history-${p.image_id}.jpg`, { type: blob.type || "image/jpeg" });
-      acceptFile(f);
-      setResult({
-        prediction: p,
-        decision: null,
-        model_available: model.data?.available ?? false,
-        message: "Loaded from prediction history.",
-      });
-    } catch {
-      toast({ title: "Could not load image", variant: "error" });
-    }
+    setError(null);
+    setResult({
+      prediction: p,
+      decision: null,
+      model_available: modelAvailable,
+      message: "Loaded from prediction history.",
+    });
   }
 
   async function confirmClass(cls: string) {
@@ -873,17 +759,16 @@ export default function DetectionPage() {
     }
   }
 
-  const modelAvailable = model.data?.available ?? false;
-
   return (
     <div className="space-y-5">
       <PageHeader
         title="AI Soiling Detection"
-        description="Upload an image or connect an IP camera, run inference and review per-class probabilities with explainability."
+        description="Connect the panel camera, capture a live frame and review per-class probabilities with explainability."
         tooltip={
           <>
-            Images are validated server-side (type, size, magic bytes) and re-encoded before storage. A
-            prediction is only issued by the configured model — or, without one, by a clearly marked demo rule.
+            Frames are captured from the connected IP camera, validated server-side (type, size, magic bytes) and
+            re-encoded before storage. A prediction is only issued by the configured model — or, without one, by a
+            clearly marked demo rule.
           </>
         }
       />
@@ -891,7 +776,7 @@ export default function DetectionPage() {
       {model.loading ? (
         <Skeleton className="h-16 w-full" />
       ) : !modelAvailable ? (
-        <WarningBanner message="MODEL NOT CONFIGURED — no trained weights are loaded, so real inference is disabled. You can still run a clearly labelled DEMO analysis (deterministic image statistics, not a neural network) to explore the workflow." />
+        <WarningBanner message="MODEL NOT CONFIGURED — no trained weights are loaded, so real inference is disabled. Captured frames are classified with the clearly labelled DEMO rule (deterministic image statistics, not a neural network) so the workflow stays usable." />
       ) : (
         <InfoBanner
           message={`Model ready: ${model.data?.name} v${model.data?.version} · classes: ${(model.data?.classes ?? []).join(", ")}${
@@ -901,63 +786,25 @@ export default function DetectionPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Input side */}
+        {/* Camera side */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ImageUp className="h-4 w-4 text-solar-600" /> Image input
+              <Video className="h-4 w-4 text-solar-600" /> Live IP camera
             </CardTitle>
             <CardDescription>
-              JPG / JPEG / PNG up to {MAX_MB} MB{selectedDevice ? ` · device ${selectedDevice.display_name}` : ""}
+              IP Webcam app on your phone · live MJPEG from /video, stills from /shot.jpg
+              {selectedDevice ? ` · device ${selectedDevice.display_name}` : ""}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <ImageDropzone file={file} onFile={acceptFile} disabled={busy !== null} />
+          <CardContent className="space-y-3">
+            <WebcamPanel onCapture={analyzeFrame} busy={busy !== null} />
 
             {error && (
               <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
               </div>
             )}
-
-            {preview ? (
-              <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                <img src={preview} alt="Selected panel preview" className="max-h-72 w-full object-contain" />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="absolute right-2 top-2 h-7 bg-white/90 px-2 text-[11px] shadow"
-                  onClick={() => {
-                    setFile(null);
-                    setResult(null);
-                    setError(null);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Remove
-                </Button>
-              </div>
-            ) : (
-              <p className="text-center text-xs text-slate-400">No image selected.</p>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              <Button className="flex-1" disabled={!file || busy !== null || !modelAvailable} onClick={() => void analyze(false)}>
-                {busy === "real" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
-                Analyze panel
-              </Button>
-              <Button
-                variant="secondary"
-                className="flex-1"
-                disabled={!file || busy !== null}
-                onClick={() => void analyze(true)}
-                title="Runs the deterministic demo rule (not a trained model)"
-              >
-                {busy === "demo" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cpu className="h-4 w-4" />}
-                Run demo analysis
-              </Button>
-            </div>
-
-            <WebcamPanel onFrame={acceptFile} disabled={busy !== null} />
           </CardContent>
         </Card>
 
@@ -970,13 +817,13 @@ export default function DetectionPage() {
               <CardTitle className="flex items-center gap-2">
                 <BrainCircuit className="h-4 w-4 text-slate-400" /> Classification result
               </CardTitle>
-              <CardDescription>Results appear here after analysis</CardDescription>
+              <CardDescription>Results appear here after capturing a frame</CardDescription>
             </CardHeader>
             <CardContent>
               <EmptyState
                 icon={<Cpu className="h-5 w-5" />}
-                title="Awaiting analysis"
-                message="Select an image and press “Analyze panel”. The result shows predicted class, confidence, per-class probabilities, model version and inference time."
+                title="Awaiting a captured frame"
+                message="Connect the camera and press “Capture & analyze”. The result shows predicted class, confidence, per-class probabilities, model version and inference time."
               />
             </CardContent>
           </Card>
