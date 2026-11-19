@@ -1,8 +1,8 @@
-﻿import * as React from "react";
-import { Download, Eye, History, Loader2, RefreshCw, Search } from "lucide-react";
+import * as React from "react";
+import { Download, History, Loader2, RefreshCw, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAsync, useDebounced } from "@/lib/hooks";
-import { cn, formatDateTime, formatNumber } from "@/lib/utils";
+import { formatDateTime, formatNumber } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,15 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { EmptyState, ErrorState, PageHeader } from "@/components/shared/indicators";
-import type { EventItem } from "@/lib/types";
 
 const PAGE_SIZE = 15;
 
@@ -32,14 +24,18 @@ const statusVariant = (s: string) =>
         ? "success"
         : "info";
 
-export default function EventsPage() {
+const prettyType = (t: string) =>
+  t
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+export default function ActivityHistoryPage() {
   const { toast } = useToast();
   const [search, setSearch] = React.useState("");
   const [type, setType] = React.useState("all");
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
   const [page, setPage] = React.useState(1);
-  const [detail, setDetail] = React.useState<EventItem | null>(null);
   const [exporting, setExporting] = React.useState(false);
   const debouncedSearch = useDebounced(search, 350);
 
@@ -66,20 +62,20 @@ export default function EventsPage() {
   const total = list.data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const typeOptions = [
-    { value: "all", label: "All event types" },
-    ...(list.data?.event_types ?? []).map((t) => ({ value: t, label: t.replace(/_/g, " ") })),
+    { value: "all", label: "All activity" },
+    ...(list.data?.event_types ?? []).map((t) => ({ value: t, label: prettyType(t) })),
   ];
 
   async function exportCsv() {
     setExporting(true);
     try {
-      await api.csvDownload("/api/export/events", "events.csv", {
+      await api.csvDownload("/api/export/events", "activity-history.csv", {
         search: debouncedSearch || undefined,
         event_type: type === "all" ? undefined : type,
         from: query.from,
         to: query.to,
       });
-      toast({ title: "Event export ready", variant: "success" });
+      toast({ title: "Activity export ready", variant: "success" });
     } catch (e) {
       toast({ title: "Export failed", description: e instanceof Error ? e.message : "", variant: "error" });
     } finally {
@@ -90,12 +86,12 @@ export default function EventsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Event History & Audit Log"
-        description="Searchable, append-only record of captures, predictions, cleaning commands, faults and configuration changes."
+        title="Activity History"
+        description="Record of camera captures, dust detections, power readings, cleaning cycles and verification results."
         tooltip={
           <>
-            Audit records are append-only for normal users; administrative actions are restricted and retained
-            for incident investigation.
+            Activity is written by the system as you capture images, collect telemetry and run cleaning
+            cycles. It is not an administrative audit log.
           </>
         }
         actions={
@@ -114,14 +110,14 @@ export default function EventsPage() {
       <Card>
         <CardContent className="flex flex-wrap items-end gap-3 pt-5">
           <div className="min-w-[220px] flex-1">
-            <Label htmlFor="event-search" className="text-[11px]">
+            <Label htmlFor="activity-search" className="text-[11px]">
               Search
             </Label>
             <div className="relative mt-1.5">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <Input
-                id="event-search"
-                placeholder="Description, device, actor, reference…"
+                id="activity-search"
+                placeholder="Search activity…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8"
@@ -129,8 +125,8 @@ export default function EventsPage() {
             </div>
           </div>
           <div className="min-w-[190px]">
-            <Label className="text-[11px]">Event type</Label>
-            <Select ariaLabel="Event type" value={type} onValueChange={setType} options={typeOptions} className="mt-1.5" />
+            <Label className="text-[11px]">Activity type</Label>
+            <Select ariaLabel="Activity type" value={type} onValueChange={setType} options={typeOptions} className="mt-1.5" />
           </div>
           <div>
             <Label className="text-[11px]">From</Label>
@@ -140,7 +136,7 @@ export default function EventsPage() {
             <Label className="text-[11px]">To</Label>
             <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1.5" />
           </div>
-          <div className="ml-auto text-xs text-slate-500">{formatNumber(total, 0)} matching events</div>
+          <div className="ml-auto text-xs text-slate-500">{formatNumber(total, 0)} matching entries</div>
         </CardContent>
       </Card>
 
@@ -148,9 +144,11 @@ export default function EventsPage() {
         <CardHeader className="flex-row items-start justify-between space-y-0">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <History className="h-4 w-4 text-solar-600" /> Events
+              <History className="h-4 w-4 text-solar-600" /> Recent activity
             </CardTitle>
-            <CardDescription>Showing page {page} of {pages}</CardDescription>
+            <CardDescription>
+              Showing page {page} of {pages}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
@@ -165,8 +163,8 @@ export default function EventsPage() {
           ) : !list.data || list.data.items.length === 0 ? (
             <EmptyState
               icon={<History className="h-5 w-5" />}
-              title="No events match the filters"
-              message="Clear the search or widen the date range. Demo mode generates events as you use the application."
+              title="No activity matches the filters"
+              message="Clear the search or widen the date range. Activity is added as captures, readings and cleaning cycles occur."
             />
           ) : (
             <>
@@ -175,13 +173,9 @@ export default function EventsPage() {
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
                       <th className="py-2 pr-3">Timestamp</th>
-                      <th className="py-2 pr-3">Event type</th>
-                      <th className="py-2 pr-3">Device</th>
+                      <th className="py-2 pr-3">Activity</th>
                       <th className="py-2 pr-3">Description</th>
                       <th className="py-2 pr-3">Status</th>
-                      <th className="py-2 pr-3">Actor</th>
-                      <th className="py-2 pr-3">Reference</th>
-                      <th className="py-2 pr-3 text-right">Detail</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -193,21 +187,11 @@ export default function EventsPage() {
                             {e.event_label}
                           </Badge>
                         </td>
-                        <td className="py-2 pr-3 font-mono text-[11px] text-slate-500">{e.device_id ?? "—"}</td>
-                        <td className="max-w-md truncate py-2 pr-3 text-xs text-slate-700" title={e.description}>
-                          {e.description}
-                        </td>
+                        <td className="max-w-xl py-2 pr-3 text-xs text-slate-700">{e.description}</td>
                         <td className="py-2 pr-3">
                           <Badge variant={statusVariant(e.status)} size="sm">
                             {e.status}
                           </Badge>
-                        </td>
-                        <td className="py-2 pr-3 text-xs text-slate-600">{e.actor}</td>
-                        <td className="py-2 pr-3 font-mono text-[11px] text-slate-500">{e.reference ?? "—"}</td>
-                        <td className="py-2 pr-3 text-right">
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => setDetail(e)}>
-                            <Eye className="h-3.5 w-3.5" /> View
-                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -216,9 +200,7 @@ export default function EventsPage() {
               </div>
 
               <div className="mt-3 flex items-center justify-between">
-                <p className="text-xs text-slate-500">
-                  Events are append-only. Records are retained per the configured data-retention policy.
-                </p>
+                <p className="text-xs text-slate-500">Newest activity first.</p>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" className="h-8" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                     Previous
@@ -232,55 +214,6 @@ export default function EventsPage() {
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Event detail</DialogTitle>
-            <DialogDescription>{detail && detail.event_label}</DialogDescription>
-          </DialogHeader>
-          {detail && (
-            <dl className="grid grid-cols-3 gap-3 text-xs">
-              <div>
-                <dt className="text-slate-500">Timestamp</dt>
-                <dd className="mt-0.5 font-medium text-slate-800">{formatDateTime(detail.ts)}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Status</dt>
-                <dd className="mt-0.5">
-                  <Badge variant={statusVariant(detail.status)} size="sm">
-                    {detail.status}
-                  </Badge>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Actor</dt>
-                <dd className="mt-0.5 font-medium text-slate-800">{detail.actor}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Device</dt>
-                <dd className="mt-0.5 font-mono text-[11px] text-slate-700">{detail.device_id ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Reference</dt>
-                <dd className="mt-0.5 font-mono text-[11px] text-slate-700">{detail.reference ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Event type</dt>
-                <dd className="mt-0.5 font-mono text-[11px] text-slate-700">{detail.event_type}</dd>
-              </div>
-              <div className="col-span-3">
-                <dt className="text-slate-500">Description</dt>
-                <dd className={cn("mt-0.5 leading-relaxed text-slate-700")}>{detail.description}</dd>
-              </div>
-              <div className="col-span-3">
-                <dt className="text-slate-500">Record ID</dt>
-                <dd className="mt-0.5 font-mono text-[11px] text-slate-600">{detail.id}</dd>
-              </div>
-            </dl>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

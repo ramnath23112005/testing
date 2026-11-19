@@ -1,18 +1,18 @@
 ﻿import * as React from "react";
 import { Link } from "react-router-dom";
 import {
-  Activity,
   AlertTriangle,
+  Brain,
   Camera,
   CheckCircle2,
   Cpu,
-  Droplets,
+  Gauge,
   Image as ImageIcon,
   Info,
   PlugZap,
   RefreshCw,
-  Sparkles,
   SunMedium,
+  Wrench,
   Zap,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -29,7 +29,6 @@ import {
   EmptyState,
   ErrorState,
   InfoBanner,
-  KpiValue,
   OperatingModeBadge,
   PageHeader,
   SourceBadge,
@@ -75,7 +74,6 @@ function MetricRow() {
   }
 
   const m = overview.data?.metrics;
-  const rec = overview.data?.recovery;
   const powerSpark = (spark.data?.points ?? [])
     .filter((p) => p.power_w !== null)
     .map((p) => ({ ts: p.ts, power_w: p.power_w }));
@@ -181,67 +179,6 @@ function MetricRow() {
               : "No verified device heartbeat"
         }
       />
-
-      {rec && (
-        <div className="sm:col-span-2 xl:col-span-4">
-          <Card className="p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Sparkles className="h-4 w-4 text-solar-600" />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Energy recovery (last cleaning)
-              </span>
-              <Badge variant={rec.measured ? "success" : "secondary"} size="sm">
-                {rec.measured ? "measured window" : "estimate"}
-              </Badge>
-              <span className="ml-auto text-[11px] text-slate-400">Source: cleaning outcome evaluation</span>
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-4">
-              <div>
-                <p className="text-[11px] text-slate-500">Power before cleaning</p>
-                <KpiValue value={rec.power_before_w != null ? formatNumber(rec.power_before_w, 0) : "—"} unit="W" size="sm" />
-              </div>
-              <div>
-                <p className="text-[11px] text-slate-500">Power after cleaning</p>
-                <KpiValue value={rec.power_after_w != null ? formatNumber(rec.power_after_w, 0) : "—"} unit="W" size="sm" />
-              </div>
-              <div>
-                <p className="text-[11px] text-slate-500">Power change</p>
-                <KpiValue
-                  value={
-                    rec.delta_pct != null ? (
-                      <span className={rec.delta_pct >= 0 ? "text-emerald-600" : "text-red-600"}>
-                        {rec.delta_pct >= 0 ? "+" : ""}
-                        {formatNumber(rec.delta_pct, 1)}
-                      </span>
-                    ) : (
-                      "—"
-                    )
-                  }
-                  unit="%"
-                  size="sm"
-                />
-              </div>
-              <div>
-                <p className="text-[11px] text-slate-500">Recovered energy vs cleaning use</p>
-                <KpiValue
-                  value={
-                    rec.recovered_energy_wh != null ? formatNumber(rec.recovered_energy_wh, 0) : "—"
-                  }
-                  unit={
-                    rec.cleaning_energy_wh != null
-                      ? `Wh (used ${formatNumber(rec.cleaning_energy_wh, 0)} Wh)`
-                      : "Wh"
-                  }
-                  size="sm"
-                />
-              </div>
-            </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-              {rec.note}
-            </p>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }
@@ -273,7 +210,7 @@ function ConditionCard() {
           <EmptyState
             icon={<ImageIcon className="h-5 w-5" />}
             title="No panel image yet"
-            message="Upload or capture an image on the AI Soiling Detection page to populate the condition card."
+            message="Upload or capture an image on the AI Dust Detection page to populate the condition card."
             action={
               <Button asChild size="sm" variant="outline">
                 <Link to="/detection">Open detection workspace</Link>
@@ -439,79 +376,114 @@ function DecisionCard() {
   );
 }
 
-function ActivityCard() {
-  const { selectedDeviceId, status } = useSystem();
-  const overview = useAsync(
-    (signal) => api.overview(selectedDeviceId ?? undefined, { signal }),
-    [selectedDeviceId],
-    { pollMs: 20_000 },
-  );
-  const a = overview.data?.activity;
-  const alerts = a?.active_alerts ?? [];
+const CAMERA_URL_KEY = "soilingguard.camera_url";
+const CAMERA_RECENT_MS = 15 * 60 * 1000;
 
-  const rows: { label: string; icon: React.ReactNode; value: string }[] = [
-    { label: "Last sensor update", icon: <Activity className="h-3.5 w-3.5" />, value: relativeTime(a?.last_sensor_at) },
-    { label: "Last image capture", icon: <Camera className="h-3.5 w-3.5" />, value: relativeTime(a?.last_image_at) },
-    { label: "Last AI inference", icon: <Cpu className="h-3.5 w-3.5" />, value: relativeTime(a?.last_inference_at) },
-    { label: "Last cleaning cycle", icon: <Droplets className="h-3.5 w-3.5" />, value: relativeTime(a?.last_cleaning_at) },
+function ConnectivityCard() {
+  const { status, selectedDevice } = useSystem();
+  const simulated = selectedDevice?.simulated ?? status?.demo_mode ?? false;
+  const online = selectedDevice ? selectedDevice.status === "online" : Boolean(status?.hardware_online);
+  const lastImage = status?.last_image_at ? Date.parse(status.last_image_at) : NaN;
+  const cameraRecent = Number.isFinite(lastImage) && Date.now() - lastImage < CAMERA_RECENT_MS;
+  const cameraConfigured = Boolean(localStorage.getItem(CAMERA_URL_KEY));
+  const modelLoaded = Boolean(status?.model.available);
+
+  type RowState = "ok" | "idle" | "off" | "demo";
+  const rows: { label: string; icon: React.ReactNode; state: RowState; detail: string }[] = [
+    {
+      label: "ESP32 controller",
+      icon: <Cpu className="h-3.5 w-3.5" />,
+      state: simulated ? "demo" : online ? "ok" : "off",
+      detail: simulated ? "Simulated device" : online ? "Heartbeat received" : "No heartbeat",
+    },
+    {
+      label: "Phone camera",
+      icon: <Camera className="h-3.5 w-3.5" />,
+      state: cameraRecent ? "ok" : cameraConfigured ? "idle" : "off",
+      detail: cameraRecent
+        ? "Recent capture received"
+        : cameraConfigured
+          ? "Configured, no recent image"
+          : "Not configured",
+    },
+    {
+      label: "INA219 sensor",
+      icon: <Gauge className="h-3.5 w-3.5" />,
+      state: simulated
+        ? "demo"
+        : selectedDevice?.electrical_sensor_status === "ok"
+          ? "ok"
+          : selectedDevice?.electrical_sensor_status === "degraded"
+            ? "idle"
+            : "off",
+      detail: simulated
+        ? "Simulated readings"
+        : selectedDevice?.electrical_sensor_status === "ok"
+          ? "Voltage & current OK"
+          : "No valid reading",
+    },
+    {
+      label: "Cleaning motor",
+      icon: <Wrench className="h-3.5 w-3.5" />,
+      state: simulated ? "demo" : status?.cleaning_in_progress ? "ok" : "idle",
+      detail: simulated ? "Simulated wiper" : status?.cleaning_in_progress ? "Running" : "Stopped",
+    },
+    {
+      label: "CNN model",
+      icon: <Brain className="h-3.5 w-3.5" />,
+      state: modelLoaded ? "ok" : "demo",
+      detail: modelLoaded ? "Model loaded" : "Demo rule only",
+    },
   ];
+
+  const stateMeta: Record<RowState, { dot: string; label: string; badge: "success" | "secondary" | "destructive" }> = {
+    ok: { dot: "bg-emerald-500", label: "Connected", badge: "success" },
+    idle: { dot: "bg-amber-500", label: "Idle", badge: "secondary" },
+    off: { dot: "bg-slate-300", label: "Disconnected", badge: "destructive" },
+    demo: { dot: "bg-sky-500", label: "Simulated", badge: "secondary" },
+  };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <PlugZap className="h-4 w-4 text-solar-600" /> System activity
+          <PlugZap className="h-4 w-4 text-solar-600" /> System connectivity
         </CardTitle>
-        <CardDescription>Heartbeats, captures, inference and cycles</CardDescription>
+        <CardDescription>Live state of each part of the prototype</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between rounded-lg bg-slate-50/80 px-3 py-2">
           <span className="text-[11px] font-medium text-slate-500">Current operating mode</span>
-          <OperatingModeBadge mode={a?.operating_mode ?? status?.operating_mode ?? "HARDWARE OFFLINE"} />
+          <OperatingModeBadge mode={status?.operating_mode ?? "HARDWARE OFFLINE"} />
         </div>
 
         <ul className="space-y-2.5">
-          {rows.map((r) => (
-            <li key={r.label} className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-2 text-slate-500">
-                <span className="text-slate-400">{r.icon}</span>
-                {r.label}
-              </span>
-              <span className="font-medium text-slate-700">{r.value}</span>
-            </li>
-          ))}
+          {rows.map((r) => {
+            const meta = stateMeta[r.state];
+            return (
+              <li key={r.label} className="flex items-center justify-between gap-2 text-xs">
+                <span className="flex min-w-0 items-center gap-2 text-slate-600">
+                  <span className="text-slate-400">{r.icon}</span>
+                  <span className="truncate">{r.label}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="hidden text-[10px] text-slate-400 sm:inline">{r.detail}</span>
+                  <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                  <Badge variant={meta.badge} size="sm">{meta.label}</Badge>
+                </span>
+              </li>
+            );
+          })}
         </ul>
 
-        <div className="border-t border-slate-100 pt-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Active alerts ({alerts.length})
+        {simulated && (
+          <p className="rounded-md bg-sky-50 px-2.5 py-2 text-[10px] leading-relaxed text-sky-900">
+            Demo mode: simulated parts are labelled and are not measurements from the physical prototype.
           </p>
-          {alerts.length === 0 ? (
-            <p className="text-xs text-slate-400">No active alerts.</p>
-          ) : (
-            <ul className="space-y-2">
-              {alerts.slice(0, 4).map((al) => (
-                <li
-                  key={al.id}
-                  className={cn(
-                    "rounded-md border-l-2 px-2.5 py-1.5 text-[11px]",
-                    al.severity === "critical"
-                      ? "border-l-red-500 bg-red-50 text-red-800"
-                      : al.severity === "warning"
-                        ? "border-l-amber-500 bg-amber-50 text-amber-900"
-                        : "border-l-sky-500 bg-sky-50 text-sky-900",
-                  )}
-                >
-                  <span className="font-semibold">{al.title}</span>
-                  <span className="block text-[10px] opacity-80">{al.message}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        )}
 
         <Button asChild variant="outline" size="sm" className="w-full">
-          <Link to="/events">Open event history</Link>
+          <Link to="/activity">Open activity history</Link>
         </Button>
       </CardContent>
     </Card>
@@ -526,7 +498,7 @@ export default function OverviewPage() {
     <div className="space-y-6">
       <PageHeader
         title="Overview"
-        description="Fleet-level snapshot of PV electrical output, visual soiling state and cleaning-system readiness."
+        description="Single-panel snapshot of electrical output, visual soiling state and cleaning-system readiness."
         tooltip={
           <>
             Metrics combine the latest telemetry sample with the most recent image classification. Power is
@@ -558,7 +530,7 @@ export default function OverviewPage() {
       <div className="grid gap-5 lg:grid-cols-3">
         <ConditionCard />
         <DecisionCard />
-        <ActivityCard />
+        <ConnectivityCard />
       </div>
     </div>
   );

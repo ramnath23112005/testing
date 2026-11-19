@@ -8,7 +8,7 @@ Safety invariants enforced server-side (never trusted from the browser):
 * cooldown and minimum interval between cycles
 * maximum runtime watchdog
 * stop is only reported as succeeded after acknowledgement of the idle state
-* every command is written to the audit log and the event log
+* every command is written to the activity event log
 """
 
 from __future__ import annotations

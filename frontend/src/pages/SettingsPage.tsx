@@ -1,22 +1,19 @@
 ﻿import * as React from "react";
 import {
-  Bell,
-  Building2,
-  Database,
+  Camera,
+  Cpu,
   Loader2,
-  Lock,
   LogOut,
   Save,
-  ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
   UserRound,
-  Users,
-  Waves,
+  Wrench,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
 import { useAuth } from "@/context/AuthContext";
+import { useSystem } from "@/context/SystemContext";
 import { formatDateTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,9 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Select } from "@/components/ui/select";
-import { Separator } from "@/components/ui/progress";
-import { ErrorState, InfoBanner, PageHeader, WarningBanner } from "@/components/shared/indicators";
+import { ErrorState, PageHeader, WarningBanner } from "@/components/shared/indicators";
 import type { AppSettings, SettingsWarning } from "@/lib/types";
 
 type Draft = Partial<Record<keyof AppSettings, string | number | boolean>>;
@@ -113,8 +108,18 @@ function NumberField({
   );
 }
 
+function ReadOnlyRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5">
+      <span className="text-xs text-slate-500">{label}</span>
+      <span className="text-right text-xs font-medium text-slate-800">{value}</span>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { hasRole, user, logout } = useAuth();
+  const { status, selectedDevice } = useSystem();
   const { toast } = useToast();
   const [draft, setDraft] = React.useState<Draft>({});
   const [saving, setSaving] = React.useState(false);
@@ -134,21 +139,19 @@ export default function SettingsPage() {
   const set = (key: keyof AppSettings, v: string | number | boolean) =>
     setDraft((d) => ({ ...d, [key]: v }));
 
+  const automatic = String(value("policy")) === "automatic";
+  const modelLoaded = Boolean(status?.model.available);
+
   function validate(): boolean {
     const errs: Record<string, string> = {};
     const num = (k: keyof AppSettings, min: number, max: number) => {
       const v = Number(value(k));
       if (!Number.isFinite(v) || v < min || v > max) errs[k as string] = `Must be between ${min} and ${max}.`;
     };
-    num("soiling_threshold_pct", 1, 95);
-    num("max_power_loss_pct", 1, 95);
     num("min_model_confidence", 0, 1);
-    num("sensor_freshness_s", 5, 86400);
+    num("soiling_threshold_pct", 1, 95);
     num("cleaning_cooldown_s", 60, 86400 * 7);
     num("max_cleaning_runtime_s", 10, 3600);
-    num("min_interval_s", 60, 86400);
-    num("data_retention_days", 1, 3650);
-    num("mqtt_port", 1, 65535);
     setValidationErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -163,7 +166,7 @@ export default function SettingsPage() {
       const body: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(draft)) {
         if (v === "") continue;
-        if (["soiling_threshold_pct", "max_power_loss_pct", "min_model_confidence", "sensor_freshness_s", "cleaning_cooldown_s", "max_cleaning_runtime_s", "min_interval_s", "data_retention_days", "mqtt_port", "reference_power_w"].includes(k)) {
+        if (["soiling_threshold_pct", "min_model_confidence", "cleaning_cooldown_s", "max_cleaning_runtime_s"].includes(k)) {
           body[k] = v === null ? null : Number(v);
         } else {
           body[k] = v;
@@ -202,7 +205,7 @@ export default function SettingsPage() {
   if (loaded.loading && !cfg) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Settings" description="System configuration" />
+        <PageHeader title="Settings" description="Detection, cleaning and operating preferences" />
         <div className="grid gap-4 lg:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-56 rounded-xl" />
@@ -215,7 +218,7 @@ export default function SettingsPage() {
   if (loaded.error && !cfg) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Settings" description="System configuration" />
+        <PageHeader title="Settings" description="Detection, cleaning and operating preferences" />
         <ErrorState message={loaded.error} onRetry={loaded.reload} />
       </div>
     );
@@ -228,19 +231,18 @@ export default function SettingsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Settings"
-        description="Classification thresholds, reference-power method, cleaning safety limits, notifications and communications."
+        description="Detection thresholds, cleaning limits, operating mode and device status."
         tooltip={
           <>
-            Settings are validated on both the client and the server. Unsafe values are accepted only with an
-            explicit warning so that expert operators can still configure unusual deployments.
+            Settings are validated on the client and on the server. Cleaning limits are applied by both the
+            backend and the ESP32 firmware.
           </>
         }
         actions={
           <div className="flex items-center gap-2">
             {cfg && (
               <span className="hidden text-right text-[11px] text-slate-400 sm:block">
-                <span className="block">last change {cfg.updated_at ? formatDateTime(cfg.updated_at) : "—"}</span>
-                <span className="block">by {cfg.updated_by ?? "system"}</span>
+                last change {cfg.updated_at ? formatDateTime(cfg.updated_at) : "—"}
               </span>
             )}
             <Button size="sm" onClick={() => void save()} disabled={!isAdmin || saving || !dirty}>
@@ -296,20 +298,20 @@ export default function SettingsPage() {
           </Button>
         </div>
         <p className="text-[11px] text-slate-400">
-          Signing out clears the stored session on this browser. You can sign in again from the signed-out screen.
+          Signing out clears the stored session on this browser and returns to the sign-in screen.
         </p>
       </Section>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Section
           icon={<SlidersHorizontal className="h-4 w-4" />}
-          title="Classification & thresholds"
-          description="How confident and how severe a prediction must be before it influences decisions"
+          title="AI dust detection"
+          description="Thresholds used by the CNN classification and the dust decision"
         >
           <NumberField
             id="min_model_confidence"
-            label="Minimum model confidence"
-            hint="Predictions below this probability are ignored by the decision engine."
+            label="CNN confidence threshold"
+            hint="Predictions below this probability are ignored by the cleaning decision."
             value={String(value("min_model_confidence"))}
             min={0}
             max={1}
@@ -320,8 +322,8 @@ export default function SettingsPage() {
           />
           <NumberField
             id="soiling_threshold_pct"
-            label="Soiling threshold"
-            hint="Normalised power loss (%) at which cleaning becomes recommended when the visual channel agrees."
+            label="Dust detection threshold"
+            hint="Estimated power loss (%) that counts as significant soiling when the camera agrees."
             value={String(value("soiling_threshold_pct"))}
             min={1}
             max={95}
@@ -331,75 +333,34 @@ export default function SettingsPage() {
             error={!!validationErrors.soiling_threshold_pct}
             onChange={(v) => set("soiling_threshold_pct", v)}
           />
-          <NumberField
-            id="max_power_loss_pct"
-            label="Maximum permitted power loss"
-            hint="Beyond this cap the engine reports a possible fault instead of attributing the loss to dust."
-            value={String(value("max_power_loss_pct"))}
-            min={1}
-            max={95}
-            step={1}
-            unit="%"
-            disabled={!isAdmin}
-            error={!!validationErrors.max_power_loss_pct}
-            onChange={(v) => set("max_power_loss_pct", v)}
-          />
-          <Separator />
-          <div className="grid gap-1.5 sm:grid-cols-[1fr_220px] sm:items-center">
-            <div>
-              <Label className="text-xs">Reference-power method</Label>
-              <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
-                Baseline used to normalise measured power before computing loss.
-              </p>
-            </div>
-            <Select
-              ariaLabel="Reference power method"
-              value={String(value("reference_power_method"))}
-              disabled={!isAdmin}
-              onValueChange={(v) => set("reference_power_method", v)}
-              options={[
-                { value: "rolling_peak", label: "Rolling peak (7 days)" },
-                { value: "fixed_rated", label: "Rated power (fixed)" },
-                { value: "manual", label: "Manual value" },
-              ]}
-            />
-          </div>
-          {value("reference_power_method") === "manual" && (
-            <NumberField
-              id="reference_power_w"
-              label="Manual reference power"
-              hint="Absolute reference in watts when the manual method is selected."
-              value={String(value("reference_power_w") || "")}
-              min={1}
-              step={10}
-              unit="W"
-              disabled={!isAdmin}
-              onChange={(v) => set("reference_power_w", v)}
-            />
-          )}
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            Current model: {modelLoaded ? `${status?.model.name} v${status?.model.version}` : "no trained CNN loaded — a clearly labelled demo rule is used instead"}.
+          </p>
         </Section>
 
         <Section
-          icon={<ShieldAlert className="h-4 w-4" />}
-          title="Cleaning safety"
-          description="Limits that bound every actuator command"
+          icon={<Wrench className="h-4 w-4" />}
+          title="Automatic cleaning"
+          description="What the system may do when dust is detected"
         >
-          <NumberField
-            id="sensor_freshness_s"
-            label="Sensor freshness timeout"
-            hint="Readings older than this are considered stale and block automatic decisions."
-            value={String(value("sensor_freshness_s"))}
-            min={5}
-            max={86400}
-            step={5}
-            unit="s"
-            disabled={!isAdmin}
-            error={!!validationErrors.sensor_freshness_s}
-            onChange={(v) => set("sensor_freshness_s", v)}
-          />
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5">
+            <div>
+              <Label className="text-xs">Automatic cleaning</Label>
+              <p className="text-[11px] text-slate-500">
+                {automatic
+                  ? "On: a recommended cycle starts without operator confirmation."
+                  : "Off: every cycle needs manual approval from the cleaning page."}
+              </p>
+            </div>
+            <Switch
+              checked={automatic}
+              disabled={!isAdmin}
+              onCheckedChange={(v) => set("policy", v ? "automatic" : "manual_approval")}
+            />
+          </div>
           <NumberField
             id="cleaning_cooldown_s"
-            label="Cooldown between cycles"
+            label="Cleaning cooldown"
             hint="Minimum time between two cleaning cycles."
             value={String(value("cleaning_cooldown_s"))}
             min={60}
@@ -411,8 +372,8 @@ export default function SettingsPage() {
           />
           <NumberField
             id="max_cleaning_runtime_s"
-            label="Maximum cleaning runtime"
-            hint="Hard watchdog: the device must stop by itself after this duration."
+            label="Motor operating duration"
+            hint="Hard limit for the wiper motor; the firmware stops the motor by itself after this time."
             value={String(value("max_cleaning_runtime_s"))}
             min={10}
             max={3600}
@@ -422,60 +383,19 @@ export default function SettingsPage() {
             error={!!validationErrors.max_cleaning_runtime_s}
             onChange={(v) => set("max_cleaning_runtime_s", v)}
           />
-          <NumberField
-            id="min_interval_s"
-            label="Minimum interval between cycles"
-            hint="Scheduling lower bound, independent of soiling conditions."
-            value={String(value("min_interval_s"))}
-            min={60}
-            step={300}
-            unit="s"
-            disabled={!isAdmin}
-            error={!!validationErrors.min_interval_s}
-            onChange={(v) => set("min_interval_s", v)}
-          />
         </Section>
 
         <Section
-          icon={<Waves className="h-4 w-4" />}
-          title="Cleaning policy"
-          description="What the system is allowed to do when a recommendation is produced"
+          icon={<Cpu className="h-4 w-4" />}
+          title="System"
+          description="Operating mode and the hardware this dashboard is connected to"
         >
-          <div className="grid gap-1.5 sm:grid-cols-[1fr_240px] sm:items-center">
-            <div>
-              <Label className="text-xs">Policy mode</Label>
-              <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
-                Default is Monitoring only. Automatic mode starts hardware without operator confirmation.
-              </p>
-            </div>
-            <Select
-              ariaLabel="Cleaning policy"
-              value={String(value("policy"))}
-              disabled={!isAdmin}
-              onValueChange={(v) => set("policy", v)}
-              options={[
-                { value: "monitoring_only", label: "Monitoring only (default)" },
-                { value: "recommendation_only", label: "Recommendation only" },
-                { value: "manual_approval", label: "Manual approval required" },
-                { value: "automatic", label: "Automatic cleaning enabled" },
-              ]}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5">
-            <div>
-              <Label className="text-xs">Scheduled fallback cleaning</Label>
-              <p className="text-[11px] text-slate-500">Optional time-based cycle when sensors are unavailable</p>
-            </div>
-            <Switch
-              checked={Boolean(value("schedule_enabled"))}
-              disabled={!isAdmin}
-              onCheckedChange={(v) => set("schedule_enabled", v)}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5">
             <div>
               <Label className="text-xs">Demo mode</Label>
-              <p className="text-[11px] text-slate-500">Simulated telemetry and actuation only; never energises hardware</p>
+              <p className="text-[11px] text-slate-500">
+                Simulated readings only; never energises hardware. Leave off when the ESP32 prototype is connected.
+              </p>
             </div>
             <Switch
               checked={Boolean(value("demo_mode"))}
@@ -483,138 +403,16 @@ export default function SettingsPage() {
               onCheckedChange={(v) => set("demo_mode", v)}
             />
           </div>
-        </Section>
-
-        <Section
-          icon={<Bell className="h-4 w-4" />}
-          title="Notifications"
-          description="Alert delivery preferences (email requires SMTP configuration on the server)"
-        >
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5">
-            <div>
-              <Label className="text-xs">Email notifications</Label>
-              <p className="text-[11px] text-slate-500">Send alerts via SMTP (credentials stay server-side)</p>
-            </div>
-            <Switch
-              checked={Boolean(value("notify_email_enabled"))}
-              disabled={!isAdmin}
-              onCheckedChange={(v) => set("notify_email_enabled", v)}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5">
-            <div>
-              <Label className="text-xs">Critical alerts only</Label>
-              <p className="text-[11px] text-slate-500">Suppress informational and warning notifications</p>
-            </div>
-            <Switch
-              checked={Boolean(value("notify_critical_only"))}
-              disabled={!isAdmin}
-              onCheckedChange={(v) => set("notify_critical_only", v)}
-            />
-          </div>
-          {!Boolean(value("notify_email_enabled")) && (
-            <InfoBanner message="Email delivery is disabled. Alerts remain available in the in-app notification centre." />
-          )}
-        </Section>
-
-        <Section
-          icon={<Building2 className="h-4 w-4" />}
-          title="Device communication"
-          description="MQTT broker used for telemetry and actuator commands"
-        >
-          <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
-            <div>
-              <Label htmlFor="mqtt-host" className="text-xs">
-                MQTT host
-              </Label>
-              <Input
-                id="mqtt-host"
-                value={String(value("mqtt_host"))}
-                disabled={!isAdmin}
-                placeholder="broker.local"
-                onChange={(e) => set("mqtt_host", e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="mqtt-port" className="text-xs">
-                Port
-              </Label>
-              <Input
-                id="mqtt-port"
-                type="number"
-                value={String(value("mqtt_port"))}
-                disabled={!isAdmin}
-                onChange={(e) => set("mqtt_port", e.target.value)}
-                className="mt-1"
-              />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="mqtt-prefix" className="text-xs">
-              Topic prefix
-            </Label>
-            <Input
-              id="mqtt-prefix"
-              value={String(value("mqtt_topic_prefix"))}
-              disabled={!isAdmin}
-              onChange={(e) => set("mqtt_topic_prefix", e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          <p className="text-[11px] leading-relaxed text-slate-500">
-            Topics follow <span className="font-mono">&lt;prefix&gt;/telemetry/&lt;device_id&gt;</span> and{" "}
-            <span className="font-mono">&lt;prefix&gt;/command/&lt;device_id&gt;</span>. Credentials are supplied
-            through environment variables and are never sent to the browser.
-          </p>
-        </Section>
-
-        <Section
-          icon={<Database className="h-4 w-4" />}
-          title="Data retention"
-          description="How long telemetry, images and events are kept"
-        >
-          <NumberField
-            id="data_retention_days"
-            label="Retention period"
-            hint="Rows older than this may be pruned by the maintenance job."
-            value={String(value("data_retention_days"))}
-            min={1}
-            max={3650}
-            step={1}
-            unit="days"
-            disabled={!isAdmin}
-            error={!!validationErrors.data_retention_days}
-            onChange={(v) => set("data_retention_days", v)}
+          <ReadOnlyRow label="Camera source" value={<span className="inline-flex items-center gap-1.5"><Camera className="h-3.5 w-3.5 text-slate-400" /> Phone camera (IP Webcam)</span>} />
+          <ReadOnlyRow
+            label="Controller"
+            value={selectedDevice?.simulated ? "Demo simulator" : `ESP32${selectedDevice?.firmware_version ? ` · ${selectedDevice.firmware_version}` : ""}`}
           />
-          <InfoBanner message="Images are stored on disk (or object storage) and referenced by the database; large binaries are never embedded in telemetry rows." />
-        </Section>
-
-        <Section
-          icon={<Users className="h-4 w-4" />}
-          title="User access roles"
-          description="Role model enforced by the backend on every privileged endpoint"
-        >
-          <ul className="space-y-2 text-xs">
-            <li className="flex items-start gap-2">
-              <Badge variant="dark" size="sm">admin</Badge>
-              <span className="text-slate-600">Full control: devices, settings, cleaning, user-facing configuration.</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <Badge variant="info" size="sm">operator</Badge>
-              <span className="text-slate-600">Start/stop cleaning, run analyses, confirm ground-truth labels.</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <Badge variant="secondary" size="sm">viewer</Badge>
-              <span className="text-slate-600">Read-only access to dashboards, analytics and events.</span>
-            </li>
-          </ul>
-          <Separator />
-          <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-600">
-            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-            Passwords are stored as salted PBKDF2-SHA256 hashes. Authentication tokens are signed JWTs with an
-            expiry. Device credentials stay in server-side environment variables.
-          </div>
+          <ReadOnlyRow
+            label="Electrical sensor"
+            value={selectedDevice?.simulated ? "Simulated INA219" : "INA219 (I²C)"}
+          />
+          <ReadOnlyRow label="Cleaning actuator" value="12 V DC motor wiper" />
         </Section>
       </div>
 

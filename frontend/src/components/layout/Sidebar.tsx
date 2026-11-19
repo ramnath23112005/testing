@@ -3,9 +3,7 @@ import {
   Activity,
   BarChart3,
   CalendarClock,
-  Cpu,
   Droplets,
-  History,
   LayoutDashboard,
   Settings,
   SunMedium,
@@ -22,7 +20,7 @@ export const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
       { to: "/monitoring", label: "Live Monitoring", icon: Activity },
-      { to: "/detection", label: "AI Soiling Detection", icon: SunMedium },
+      { to: "/detection", label: "AI Dust Detection", icon: SunMedium },
     ],
   },
   {
@@ -30,15 +28,11 @@ export const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: "/cleaning", label: "Automatic Cleaning", icon: Droplets },
       { to: "/analytics", label: "Performance Analytics", icon: BarChart3 },
-      { to: "/events", label: "Event History", icon: History },
     ],
   },
   {
     label: "System",
-    items: [
-      { to: "/devices", label: "Device Management", icon: Cpu },
-      { to: "/settings", label: "Settings", icon: Settings },
-    ],
+    items: [{ to: "/settings", label: "Settings", icon: Settings }],
   },
 ];
 
@@ -47,8 +41,6 @@ export const NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((s) => s.items);
 const EASE = "ease-[cubic-bezier(0.4,0,0.2,1)]";
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
-  const { status } = useSystem();
-  const alertCount = status?.active_alerts ?? 0;
 
   return (
     <nav aria-label="Primary" className="flex flex-col px-2 pb-4 pt-3">
@@ -89,11 +81,6 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                         )}
                       />
                       <span className="flex-1 truncate">{item.label}</span>
-                      {item.to === "/events" && alertCount > 0 && (
-                        <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-200 ring-1 ring-inset ring-red-500/30">
-                          {alertCount > 99 ? "99+" : alertCount}
-                        </span>
-                      )}
                     </>
                   )}
                 </NavLink>
@@ -125,8 +112,6 @@ function SidebarFooter() {
 }
 
 function RailNav() {
-  const { status } = useSystem();
-  const alertCount = status?.active_alerts ?? 0;
 
   return (
     <nav aria-label="Quick navigation" className="flex flex-col px-2 pt-3">
@@ -165,12 +150,6 @@ function RailNav() {
                           isActive ? "text-solar-400" : "text-slate-500 group-hover:text-slate-300",
                         )}
                       />
-                      {item.to === "/events" && alertCount > 0 && (
-                        <span
-                          aria-hidden="true"
-                          className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-navy-900"
-                        />
-                      )}
                     </>
                   )}
                 </NavLink>

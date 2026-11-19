@@ -762,8 +762,8 @@ export default function DetectionPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="AI Soiling Detection"
-        description="Connect the panel camera, capture a live frame and review per-class probabilities with explainability."
+        title="AI Dust Detection"
+        description="Connect your phone camera through IP Webcam, capture a frame and review the CNN dust classification."
         tooltip={
           <>
             Frames are captured from the connected IP camera, validated server-side (type, size, magic bytes) and

@@ -95,7 +95,7 @@ def seed_device(db: Session) -> Device:
             active=True,
             has_irradiance_sensor=True,
             has_climate_sensor=True,
-            actuator_type="pump",
+            actuator_type="wiper",
             last_heartbeat=datetime.now(timezone.utc),
         )
         device.modules.append(
@@ -254,19 +254,19 @@ def seed_month_history(db: Session, device: Device) -> None:
         )
 
     events_spec = [
-        (29, 8, "device_connected", "info", "Controller reconnected after scheduled maintenance."),
-        (26, 11, "settings_changed", "info", "Nightly report schedule updated (demo)."),
-        (22, 17, "cleaning_recommended", "warning", "Estimated soiling loss crossed 8% - cleaning recommended."),
-        (21, 9, "cleaning_started", "info", "Automatic cleaning cycle started (simulated)."),
-        (21, 9, "cleaning_completed", "success", "Automatic cleaning cycle completed (simulated)."),
-        (17, 14, "sensor_offline", "warning", "Irradiance sensor reported stale values for 12 minutes."),
-        (17, 15, "device_connected", "info", "Irradiance sensor recovered and is reporting again."),
-        (13, 16, "cleaning_recommended", "warning", "Soiling accumulation trend rising - cleaning recommended."),
-        (12, 10, "cleaning_completed", "success", "Automatic cleaning cycle completed (simulated)."),
-        (9, 12, "soiling_threshold_crossed", "warning", "Soiling loss estimate crossed the configured warning threshold."),
-        (5, 21, "login", "info", "User signed in from web dashboard."),
-        (4, 9, "cleaning_completed", "success", "Automatic cleaning cycle completed (simulated)."),
-        (1, 18, "data_exported", "info", "Telemetry export generated for the demo period."),
+        (29, 8, "camera_connected", "info", "Phone camera connected through the IP Webcam app."),
+        (26, 11, "image_captured", "info", "Panel image captured for dust classification."),
+        (22, 17, "dust_detected", "warning", "Heavily dusty panel detected with 93% model confidence."),
+        (22, 17, "power_measured", "info", "INA219 reported 12.4 V, 0.85 A and 10.5 W."),
+        (22, 18, "cleaning_recommended", "warning", "Estimated power loss crossed the dust threshold - cleaning recommended."),
+        (21, 9, "cleaning_started", "info", "Wiper motor cycle started (simulated)."),
+        (21, 9, "cleaning_completed", "success", "Wiper motor cycle completed (simulated)."),
+        (21, 10, "cleaning_verified", "success", "Cleaning verified: power increased 13.1% after the cycle."),
+        (17, 14, "sensor_error", "warning", "INA219 reading was stale for 12 minutes (simulated fault)."),
+        (13, 16, "cleaning_recommended", "warning", "Soiling trend rising - another cleaning was recommended."),
+        (12, 10, "cleaning_completed", "success", "Wiper motor cycle completed (simulated)."),
+        (9, 12, "soiling_threshold_crossed", "warning", "Dust estimate crossed the configured warning threshold."),
+        (4, 9, "cleaning_verified", "success", "Cleaning verified: power increased 11.7% after the cycle."),
     ]
     for d, hour, etype, status, text in events_spec:
         db.add(
@@ -276,15 +276,14 @@ def seed_month_history(db: Session, device: Device) -> None:
                 device_id=device.id,
                 description=text,
                 status=status,
-                actor="Ramnath" if etype == "login" else "system",
+                actor="system",
             )
         )
 
     alerts_spec = [
-        (22, "warning", "Soiling loss above 8%", "Estimated soiling loss reached 8.4% on Roof Array A (simulated)."),
-        (17, "warning", "Irradiance sensor stale", "Irradiance readings were stale for 12 minutes (simulated fault)."),
-        (12, "info", "Cleaning cycle completed", "Automatic cleaning completed with a +13.1% simulated power recovery."),
-        (1, "info", "Monthly demo report ready", "A 30-day simulated performance summary is available."),
+        (22, "warning", "Dust level above threshold", "Estimated dust severity reached the configured threshold (simulated)."),
+        (17, "warning", "Electrical sensor stale", "INA219 readings were stale for 12 minutes (simulated fault)."),
+        (12, "info", "Cleaning cycle completed", "Wiper cycle completed with a +13.1% simulated power increase."),
     ]
     for d, sev, title, message in alerts_spec:
         db.add(

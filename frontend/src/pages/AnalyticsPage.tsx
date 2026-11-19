@@ -1,5 +1,5 @@
 ﻿import * as React from "react";
-import { Download, FileBarChart, Loader2, Printer, RefreshCw } from "lucide-react";
+import { Download, FileBarChart, Loader2, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
 import { useSystem } from "@/context/SystemContext";
@@ -76,8 +76,6 @@ export default function AnalyticsPage() {
     delta: Number(r.delta_pct.toFixed(1)),
   }));
 
-  const energySeries = (data?.energy_series ?? []).map((r) => ({ label: r.date, energy: Math.round(r.wh) }));
-
   const perfSeries = (data?.perf_series ?? []).map((r) => ({
     ts: r.ts,
     actual_w: Math.round(r.actual_w),
@@ -104,7 +102,7 @@ export default function AnalyticsPage() {
     <div className="space-y-5 print-area">
       <PageHeader
         title="Performance Analytics"
-        description="Soiling detections, electrical trends, cleaning outcomes and model evaluation — filtered by date range."
+        description="Dust detections, power trends, cleaning outcomes and CNN evaluation — filtered by date range."
         tooltip={
           <>
             Classification accuracy, precision, recall and F1 are only shown when independently verified
@@ -127,9 +125,6 @@ export default function AnalyticsPage() {
             <Button size="sm" variant="secondary" onClick={() => void exportCsv()} disabled={exporting}>
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               Export CSV
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => window.print()}>
-              <Printer className="h-3.5 w-3.5" /> Print report
             </Button>
           </div>
         }
@@ -181,16 +176,16 @@ export default function AnalyticsPage() {
 
           {!data.power_recovery.measured && (
             <WarningBanner
-              message={`Energy recovery figures are estimates: ${data.power_recovery.note}`}
+              message={`Power-change figures are estimates: ${data.power_recovery.note}`}
             />
           )}
 
           <Tabs defaultValue="soiling">
             <TabsList className="no-print">
-              <TabsTrigger value="soiling">Soiling analytics</TabsTrigger>
+              <TabsTrigger value="soiling">Dust analytics</TabsTrigger>
               <TabsTrigger value="electrical">Electrical analytics</TabsTrigger>
               <TabsTrigger value="cleaning">Cleaning analytics</TabsTrigger>
-              <TabsTrigger value="model">Model performance</TabsTrigger>
+              <TabsTrigger value="model">CNN performance</TabsTrigger>
             </TabsList>
 
             {/* ------------------------- soiling ------------------------- */}
@@ -199,7 +194,7 @@ export default function AnalyticsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <FileBarChart className="h-4 w-4 text-solar-600" /> Classification distribution
+                      <FileBarChart className="h-4 w-4 text-solar-600" /> Dust class distribution
                     </CardTitle>
                     <CardDescription>Stored predictions grouped by predicted class</CardDescription>
                   </CardHeader>
@@ -233,7 +228,7 @@ export default function AnalyticsPage() {
 
                 <Card className="lg:col-span-2">
                   <CardHeader>
-                    <CardTitle>Soiling detections over time</CardTitle>
+                    <CardTitle>Dust detections over time</CardTitle>
                     <CardDescription>Daily count of stored predictions with their average confidence</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -272,20 +267,6 @@ export default function AnalyticsPage() {
                           { key: "after", color: SERIES.after, name: "after (W)" },
                         ]}
                       />
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Energy production over time</CardTitle>
-                    <CardDescription>Daily energy integrated from sampled power (Wh)</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {energySeries.length === 0 ? (
-                      <EmptyState title="No energy data" message="Telemetry history will populate this chart." />
-                    ) : (
-                      <BarsChart data={energySeries} dataKey="energy" xKey="label" color={SERIES.irradiance} unit=" Wh" />
                     )}
                   </CardContent>
                 </Card>
@@ -338,7 +319,6 @@ export default function AnalyticsPage() {
                   unit="s"
                   sub="per cycle"
                 />
-                <Kpi label="Water consumed" value={formatNumber(data.cleaning_stats.water_l, 1)} unit="L" sub="recorded total" />
                 <Kpi
                   label="Actuator energy"
                   value={formatNumber(data.cleaning_stats.energy_wh, 1)}
@@ -348,12 +328,6 @@ export default function AnalyticsPage() {
                 <Kpi label="Failed cycles" value={data.cleaning_stats.failed} sub="reported by device" />
                 <Kpi label="Aborted cycles" value={data.cleaning_stats.aborted} sub="stopped by operator" />
                 <Kpi label="Repeated within 24 h" value={data.cleaning_stats.repeated_24h} sub="possible over-cleaning" />
-                <Kpi
-                  label="Recovered energy"
-                  value={data.power_recovery.estimated_recovered_wh != null ? formatNumber(data.power_recovery.estimated_recovered_wh, 0) : "—"}
-                  unit="Wh"
-                  sub={data.power_recovery.measured ? "measured" : "estimated"}
-                />
               </div>
 
               <Card>
@@ -367,7 +341,7 @@ export default function AnalyticsPage() {
                   </div>
                   <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
                     A short-term power increase alone does not prove that cleaning was necessary or successful —
-                    irradiance and temperature must be comparable between the two windows, otherwise the result
+                    light level and temperature must be comparable between the two windows, otherwise the result
                     is reported as an estimate.
                   </p>
                 </CardContent>

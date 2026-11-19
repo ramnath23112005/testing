@@ -1,7 +1,6 @@
 ﻿import * as React from "react";
 import {
   Activity,
-  CircleDot,
   Download,
   LineChart as LineChartIcon,
   RefreshCw,
@@ -26,23 +25,13 @@ import {
   SourceBadge,
 } from "@/components/shared/indicators";
 import {
-  ChartFrame,
-  ChartGrid,
   ChartTooltipContent,
   LegendDot,
   MultiLineChart,
   SERIES,
-  TimeAxis,
 } from "@/components/charts/chartkit";
-import { Line, LineChart, Tooltip, YAxis } from "recharts";
+import { Line, Tooltip } from "recharts";
 import type { TelemetryPoint } from "@/lib/types";
-
-const CLASS_INDEX: Record<string, number> = {
-  clean: 3,
-  lightly_dusty: 2,
-  heavily_dusty: 1,
-  bird_dropping: 0,
-};
 
 function toIsoLocal(value: string): string | undefined {
   if (!value) return undefined;
@@ -269,21 +258,6 @@ export default function LiveMonitoringPage() {
     { pollMs: RANGE_POLL_MS[range] },
   );
 
-  const predictions = useAsync(
-    () =>
-      selectedDeviceId
-        ? api
-            .predictions({
-              from: params.from,
-              to: params.to,
-              page_size: 200,
-            })
-            .catch(() => ({ items: [], total: 0, page: 1, page_size: 200 }))
-        : Promise.resolve({ items: [], total: 0, page: 1, page_size: 200 }),
-    [selectedDeviceId, params.range, params.from, params.to],
-    { pollMs: 60_000 },
-  );
-
   const cleaning = useAsync(
     () => api.cleaningHistory({ page_size: 100 }).catch(() => ({ items: [], total: 0, simulated: true })),
     [selectedDeviceId],
@@ -317,14 +291,6 @@ export default function LiveMonitoringPage() {
     }
     return marked;
   }, [merged, cleaning.data]);
-
-  const classSeries = React.useMemo(() => {
-    const items = (predictions.data?.items ?? [])
-      .map((p) => ({ ts: p.captured_at, cls: CLASS_INDEX[p.predicted_class] ?? -1, name: p.predicted_label }))
-      .filter((p) => p.cls >= 0)
-      .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
-    return items;
-  }, [predictions.data]);
 
   const missing = merged.filter((p) => p.power_w === null).length;
   const source = telemetry.data?.source ?? "simulated";
@@ -495,7 +461,7 @@ export default function LiveMonitoringPage() {
         <InfoBanner
           message={`${missing} sample${missing === 1 ? "" : "s"} in this range have no recorded measurement. Gaps are shown as breaks in the curves and are never filled or interpolated.${
             atSiteNight
-              ? " Nighttime at the site (sunset ~6:36 PM local solar time): the inverter reports no AC output until dawn, so power/voltage/current curves are legitimately empty."
+              ? " Nighttime at the site (sunset ~6:36 PM local solar time): the panel reports no output until dawn, so power/voltage/current curves are legitimately empty."
               : ""
           }`}
         />
@@ -592,83 +558,23 @@ export default function LiveMonitoringPage() {
             </ChartCard>
 
             <ChartCard
-              title="Solar irradiance"
+              title={selectedDevice?.has_irradiance_sensor ? "Solar irradiance" : "Light level (relative)"}
               description={
-                selectedDevice && !selectedDevice.has_irradiance_sensor
-                  ? "Irradiance sensor not installed — electrical decisions use reduced certainty"
-                  : "Plane-of-array irradiance (W/m²)"
+                selectedDevice?.has_irradiance_sensor
+                  ? "Plane-of-array irradiance (W/m²)"
+                  : "Relative LDR index from the ESP32 — not calibrated irradiance"
               }
               right={<SourceBadge source={source} />}
             >
               <MultiLineChart
                 data={merged}
                 height={230}
-                yUnit=""
-                series={[{ key: "irradiance_wm2", color: SERIES.irradiance, name: "Irradiance", unit: "W/m²" }]}
+                series={
+                  selectedDevice?.has_irradiance_sensor
+                    ? [{ key: "irradiance_wm2", color: SERIES.irradiance, name: "Irradiance", unit: "W/m²" }]
+                    : [{ key: "light_level", color: SERIES.irradiance, name: "Light level", unit: "%" }]
+                }
               />
-            </ChartCard>
-
-            <ChartCard
-              title="Soiling classification versus time"
-              description="Each point is a stored AI prediction; hover for the class name"
-              right={
-                predictions.data && predictions.data.items.length > 0 ? (
-                  <Badge variant="secondary" size="sm">{predictions.data.items.length} predictions</Badge>
-                ) : (
-                  <Badge variant="outline" size="sm">no predictions</Badge>
-                )
-              }
-            >
-              {classSeries.length === 0 ? (
-                <EmptyState
-                  icon={<CircleDot className="h-5 w-5" />}
-                  title="No classifications in this range"
-                  message="Run an analysis on the AI Soiling Detection page to populate the timeline."
-                />
-              ) : (
-                <ChartFrame height={230}>
-                  <LineChart data={classSeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                    <ChartGrid />
-                    <TimeAxis />
-                    <YAxis
-                      reversed
-                      domain={[-0.5, 3.5]}
-                      ticks={[0, 1, 2, 3]}
-                      tickFormatter={(v: number) =>
-                        ["Bird dropping", "Heavily dusty", "Lightly dusty", "Clean"][v] ?? ""
-                      }
-                      tick={{ fontSize: 10, fill: "#94a3b8" }}
-                      tickLine={false}
-                      axisLine={{ stroke: "#e2e8f0" }}
-                      width={92}
-                    />
-                    <Tooltip
-                      isAnimationActive={false}
-                      content={(props) => {
-                        const { active, payload, label } = props;
-                        const row = payload?.[0] as { payload?: { name?: string } } | undefined;
-                        if (!active || !payload || payload.length === 0) return null;
-                        return (
-                          <div className="rounded-md border border-navy-700 bg-navy-900 px-3 py-2 text-xs text-slate-100 shadow-lg">
-                            <p className="text-[11px] font-semibold text-slate-300">{formatDateTime(String(label))}</p>
-                            <p>{row?.payload?.name ?? "—"}</p>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Line
-                      type="stepAfter"
-                      dataKey="cls"
-                      name="class"
-                      stroke={SERIES.fault}
-                      strokeWidth={1.4}
-                      dot={{ r: 4, fill: "#fff", stroke: SERIES.fault, strokeWidth: 2 }}
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                  </LineChart>
-                </ChartFrame>
-              )}
             </ChartCard>
 
             <ChartCard

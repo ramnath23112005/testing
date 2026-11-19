@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   CircleSlash,
-  Droplet,
   Droplets,
   Gauge,
   History,
@@ -111,7 +110,7 @@ function DecisionPanel() {
             <Zap className="h-4 w-4 text-solar-600" /> Condition-based decision
           </CardTitle>
           <CardDescription>
-            Combines the visual classification with irradiance-normalised electrical evidence
+            Combines the visual classification with reference-power-normalised electrical evidence
           </CardDescription>
         </div>
         <Button size="sm" variant="outline" onClick={() => void evaluateNow()} disabled={evaluating}>
@@ -350,7 +349,7 @@ export default function CleaningPage() {
     <div className="space-y-5">
       <PageHeader
         title="Automatic Cleaning"
-        description="Safe, auditable control of the pump / brush / wiper mechanism with interlocks, cooldown and runtime limits."
+        description="Safe control of the 12 V wiper motor with interlocks, cooldown and runtime limits."
         tooltip={
           <>
             Commands require an authenticated operator, pass server-side interlock checks, run against a
@@ -370,7 +369,7 @@ export default function CleaningPage() {
       />
 
       {status?.demo_mode && (
-        <InfoBanner message="DEMO MODE: cleaning commands operate a simulated actuator only — no pump, valve or motor is ever energised by this deployment." />
+        <InfoBanner message="DEMO MODE: cleaning commands operate a simulated wiper only — no motor is ever energised by this deployment." />
       )}
       {s && !s.hardware_online && !status?.demo_mode && (
         <WarningBanner message="Controller is offline. Real actuator controls are disabled until a verified heartbeat is received." />
@@ -417,15 +416,12 @@ export default function CleaningPage() {
                   </div>
                   <div className="rounded-lg border border-slate-200 p-3">
                     <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                      <Droplet className="h-3.5 w-3.5 text-sky-600" />
-                      Water level
+                      <Power className="h-3.5 w-3.5 text-sky-600" />
+                      Command path
                     </p>
                     <p className="mt-1 text-sm font-semibold text-slate-800">
-                      {s.water_sensor_present && s.water_level_pct != null ? `${formatNumber(s.water_level_pct, 0)}%` : "not measured"}
+                      {s.simulated ? "Simulated" : s.hardware_online ? "ESP32 online" : "Awaiting device"}
                     </p>
-                    {s.water_sensor_present && s.water_level_pct != null && (
-                      <Progress value={s.water_level_pct} className="mt-1.5 h-1.5" />
-                    )}
                   </div>
                   <div className="rounded-lg border border-slate-200 p-3">
                     <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
@@ -554,12 +550,6 @@ export default function CleaningPage() {
                   label="Last duration"
                   value={s.last_cycle_duration_s != null ? `${formatNumber(s.last_cycle_duration_s, 0)} s` : "—"}
                   sub={s.last_cycle_at ? relativeTime(s.last_cycle_at) : "never"}
-                />
-                <StatTile
-                  icon={<Droplet className="h-4 w-4" />}
-                  label="Water consumed"
-                  value={s.water_consumed_l != null ? `${formatNumber(s.water_consumed_l, 1)} L` : "not measured"}
-                  sub="total recorded"
                 />
                 <StatTile
                   icon={<Zap className="h-4 w-4" />}
@@ -697,7 +687,6 @@ export default function CleaningPage() {
                     <th className="py-2 pr-3">Trigger</th>
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Duration</th>
-                    <th className="py-2 pr-3">Water</th>
                     <th className="py-2 pr-3">Energy</th>
                     <th className="py-2 pr-3">Power before → after</th>
                     <th className="py-2 pr-3">Change</th>
@@ -728,7 +717,6 @@ export default function CleaningPage() {
                         </Badge>
                       </td>
                       <td className="py-2 pr-3 text-xs">{j.duration_s != null ? `${formatNumber(j.duration_s, 0)} s` : "—"}</td>
-                      <td className="py-2 pr-3 text-xs">{j.water_liters != null ? `${formatNumber(j.water_liters, 1)} L` : "—"}</td>
                       <td className="py-2 pr-3 text-xs">{j.energy_wh != null ? `${formatNumber(j.energy_wh, 1)} Wh` : "—"}</td>
                       <td className="py-2 pr-3 text-xs">
                         {j.power_before_w != null && j.power_after_w != null
@@ -768,9 +756,9 @@ export default function CleaningPage() {
               <AlertTriangle className="h-5 w-5 text-amber-600" /> Start cleaning cycle?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will energise the {s?.actuator ?? "pump"} for up to {s ? formatNumber(s.max_runtime_s / 60, 0) : "—"} minutes
+              This will energise the wiper motor for up to {s ? formatNumber(s.max_runtime_s / 60, 0) : "—"} minutes
               {s?.simulated ? " (simulated actuator in demo mode)" : ""}. The command is authenticated, rate-limited and
-              written to the audit log. Only start when the area is clear of personnel.
+              written to the activity history. Only start when the area is clear of personnel.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogButtons
