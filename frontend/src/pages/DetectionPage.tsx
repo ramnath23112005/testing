@@ -322,12 +322,18 @@ function HistoryList({
                   {list.data.items.map((p) => (
                     <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="py-2 pr-3">
-                        <img
-                          src={mediaUrl(p.image_url) ?? ""}
-                          alt="panel thumbnail"
-                          className="h-10 w-14 rounded border border-slate-200 object-cover"
-                          loading="lazy"
-                        />
+                        {mediaUrl(p.image_url) ? (
+                          <img
+                            src={mediaUrl(p.image_url)!}
+                            alt="panel thumbnail"
+                            className="h-10 w-14 rounded border border-slate-200 object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-14 items-center justify-center rounded border border-slate-200 bg-slate-100 text-slate-400">
+                            <ScanSearch className="h-4 w-4" />
+                          </div>
+                        )}
                       </td>
                       <td className="py-2 pr-3">
                         <ClassBadge value={p.predicted_class} label={p.predicted_label} />

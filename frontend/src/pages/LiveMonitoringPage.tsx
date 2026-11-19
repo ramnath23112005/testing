@@ -97,7 +97,15 @@ function useLiveSocket(deviceId: string | null) {
     return () => {
       closed = true;
       if (retryTimer) clearTimeout(retryTimer);
-      socket?.close();
+      if (!socket) return;
+      const ws = socket;
+      if (ws.readyState === WebSocket.CONNECTING) {
+        // Closing during CONNECTING logs a browser warning; close once open instead.
+        ws.onopen = () => ws.close();
+        ws.onerror = null;
+      } else {
+        ws.close();
+      }
     };
   }, [deviceId]);
 
