@@ -1,16 +1,37 @@
+﻿import * as React from "react";
 import { Link } from "react-router-dom";
-import { Camera, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  Brain,
+  Camera,
+  CheckCircle2,
+  Cpu,
+  Gauge,
+  Image as ImageIcon,
+  Info,
+  PlugZap,
+  RefreshCw,
+  SunMedium,
+  Wrench,
+  Zap,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
 import { useSystem } from "@/context/SystemContext";
-import { formatDateTime, formatNumber, relativeTime } from "@/lib/utils";
+import { cn, formatDateTime, formatNumber, relativeTime } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import {
+  ClassBadge,
+  EmptyState,
   ErrorState,
   InfoBanner,
   OperatingModeBadge,
   PageHeader,
+  SourceBadge,
   WarningBanner,
 } from "@/components/shared/indicators";
 import { MetricCard } from "@/components/shared/MetricCard";
@@ -162,6 +183,313 @@ function MetricRow() {
   );
 }
 
+function ConditionCard() {
+  const { selectedDeviceId } = useSystem();
+  const overview = useAsync(
+    (signal) => api.overview(selectedDeviceId ?? undefined, { signal }),
+    [selectedDeviceId],
+    { pollMs: 20_000 },
+  );
+  const c = overview.data?.condition;
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <SunMedium className="h-4 w-4 text-solar-600" /> Solar panel condition
+          </CardTitle>
+          <CardDescription>Latest captured image and its classification</CardDescription>
+        </div>
+        {c?.source && <SourceBadge source={c.source} />}
+      </CardHeader>
+      <CardContent>
+        {overview.loading && !c ? (
+          <Skeleton className="h-[260px] w-full" />
+        ) : !c || !c.image_url ? (
+          <EmptyState
+            icon={<ImageIcon className="h-5 w-5" />}
+            title="No panel image yet"
+            message="Upload or capture an image on the AI Dust Detection page to populate the condition card."
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link to="/detection">Open detection workspace</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-3">
+            <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+              <img
+                src={c.image_url}
+                alt="Latest solar panel capture"
+                className="h-48 w-full object-cover sm:h-56"
+                loading="lazy"
+              />
+              <div className="absolute left-2 top-2 flex items-center gap-1.5">
+                <Badge variant={c.predicted_class === "clean" ? "success" : c.predicted_class ? "destructive" : "secondary"}>
+                  {c.predicted_label ?? "Awaiting classification"}
+                </Badge>
+              </div>
+              <div className="absolute bottom-2 right-2 rounded bg-navy-900/80 px-2 py-1 text-[10px] text-slate-200">
+                {formatDateTime(c.captured_at)}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <p className="text-[11px] text-slate-500">Predicted condition</p>
+                <p className="mt-0.5 font-semibold text-slate-800">{c.predicted_label ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-500">Model confidence</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <Progress value={(c.confidence ?? 0) * 100} className="h-1.5 flex-1" />
+                  <span className="font-mono text-[11px] text-slate-700">
+                    {c.confidence != null ? `${formatNumber(c.confidence * 100, 1)}%` : "—"}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-500">Model version</p>
+                <p className="mt-0.5 font-mono text-[11px] text-slate-700">{c.model_version ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-500">Captured</p>
+                <p className="mt-0.5 text-[11px] text-slate-700">{relativeTime(c.captured_at)}</p>
+              </div>
+            </div>
+
+            {c.recommendation && (
+              <div className="rounded-lg border-l-[3px] border-amber-500 bg-amber-50/70 px-3 py-2 text-[11px] leading-relaxed text-amber-900/90 shadow-sm">
+                <span className="font-semibold">Recommendation: </span>
+                {c.recommendation}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-slate-500">Supported classes:</span>
+              {["clean", "lightly_dusty", "heavily_dusty", "bird_dropping"].map((k) => (
+                <ClassBadge key={k} value={k} />
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DecisionCard() {
+  const { selectedDeviceId, status } = useSystem();
+  const decision = useAsync(
+    () => api.latestDecision(selectedDeviceId ?? undefined).catch(() => null),
+    [selectedDeviceId],
+    { pollMs: 30_000 },
+  );
+
+  const d = decision.data ?? null;
+  const actionTone = (a?: string) =>
+    a === "cleaning_required"
+      ? { cls: "border-l-red-500 bg-red-50/70 text-red-900", icon: <AlertTriangle className="h-4 w-4 text-red-500" /> }
+      : a === "cleaning_recommended"
+        ? { cls: "border-l-amber-500 bg-amber-50/70 text-amber-900", icon: <AlertTriangle className="h-4 w-4 text-amber-600" /> }
+        : a === "cleaning_deferred" || a === "possible_sensor_fault"
+          ? { cls: "border-l-orange-500 bg-orange-50/70 text-orange-900", icon: <Info className="h-4 w-4 text-orange-600" /> }
+          : a === "insufficient_data"
+            ? { cls: "border-l-slate-400 bg-slate-50/80 text-slate-700", icon: <Info className="h-4 w-4 text-slate-500" /> }
+            : { cls: "border-l-emerald-500 bg-emerald-50/70 text-emerald-900", icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" /> };
+
+  const tone = actionTone(d?.action);
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-solar-600" /> Cleaning decision
+          </CardTitle>
+          <CardDescription>Visual + electrical sensor fusion</CardDescription>
+        </div>
+        <Badge variant="secondary" size="sm">{d?.certainty ?? "—"} certainty</Badge>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {decision.loading && !d ? (
+          <Skeleton className="h-24 w-full" />
+        ) : !d ? (
+          <EmptyState
+            title="No decision recorded yet"
+            message="A decision is produced when fresh telemetry and a recent classification are both available. Open the cleaning page to evaluate now."
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link to="/cleaning">Open cleaning control</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            <div className={cn("flex items-start gap-2.5 rounded-lg border-l-[3px] px-3 py-2.5 shadow-sm", tone.cls)}>
+              {tone.icon}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{d.action_label}</p>
+                <p className="mt-0.5 text-[11px] opacity-80">
+                  Confidence {formatNumber(d.confidence * 100, 0)}% · policy {d.policy.replace("_", " ")} ·{" "}
+                  {relativeTime(d.generated_at)}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs leading-relaxed text-slate-600">{d.explanation}</p>
+
+            <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
+              {d.evidence.slice(0, 4).map((e, i) => (
+                <div key={i} className="flex items-start gap-2 text-[11px]">
+                  <span
+                    className={cn(
+                      "mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
+                      e.impact === "supports_cleaning"
+                        ? "bg-emerald-500"
+                        : e.impact === "against_cleaning"
+                          ? "bg-slate-400"
+                          : "bg-sky-500",
+                    )}
+                  />
+                  <span className="text-slate-500">
+                    <span className="font-medium text-slate-700">{e.label}:</span> {e.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px]">
+              <span className="text-slate-400">
+                {status?.demo_mode ? "Computed on simulated telemetry" : "Computed on live telemetry"}
+              </span>
+              <Link to="/cleaning" className="font-medium text-solar-700 hover:underline">
+                Review on cleaning page →
+              </Link>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const CAMERA_URL_KEY = "soilingguard.camera_url";
+const CAMERA_RECENT_MS = 15 * 60 * 1000;
+
+function ConnectivityCard() {
+  const { status, selectedDevice } = useSystem();
+  const simulated = selectedDevice?.simulated ?? status?.demo_mode ?? false;
+  const online = selectedDevice ? selectedDevice.status === "online" : Boolean(status?.hardware_online);
+  const lastImage = status?.last_image_at ? Date.parse(status.last_image_at) : NaN;
+  const cameraRecent = Number.isFinite(lastImage) && Date.now() - lastImage < CAMERA_RECENT_MS;
+  const cameraConfigured = Boolean(localStorage.getItem(CAMERA_URL_KEY));
+  const modelLoaded = Boolean(status?.model.available);
+
+  type RowState = "ok" | "idle" | "off" | "demo";
+  const rows: { label: string; icon: React.ReactNode; state: RowState; detail: string }[] = [
+    {
+      label: "ESP32 controller",
+      icon: <Cpu className="h-3.5 w-3.5" />,
+      state: simulated ? "demo" : online ? "ok" : "off",
+      detail: simulated ? "Simulated device" : online ? "Heartbeat received" : "No heartbeat",
+    },
+    {
+      label: "Phone camera",
+      icon: <Camera className="h-3.5 w-3.5" />,
+      state: cameraRecent ? "ok" : cameraConfigured ? "idle" : "off",
+      detail: cameraRecent
+        ? "Recent capture received"
+        : cameraConfigured
+          ? "Configured, no recent image"
+          : "Not configured",
+    },
+    {
+      label: "INA219 sensor",
+      icon: <Gauge className="h-3.5 w-3.5" />,
+      state: simulated
+        ? "demo"
+        : selectedDevice?.electrical_sensor_status === "ok"
+          ? "ok"
+          : selectedDevice?.electrical_sensor_status === "degraded"
+            ? "idle"
+            : "off",
+      detail: simulated
+        ? "Simulated readings"
+        : selectedDevice?.electrical_sensor_status === "ok"
+          ? "Voltage & current OK"
+          : "No valid reading",
+    },
+    {
+      label: "Cleaning motor",
+      icon: <Wrench className="h-3.5 w-3.5" />,
+      state: simulated ? "demo" : status?.cleaning_in_progress ? "ok" : "idle",
+      detail: simulated ? "Simulated wiper" : status?.cleaning_in_progress ? "Running" : "Stopped",
+    },
+    {
+      label: "CNN model",
+      icon: <Brain className="h-3.5 w-3.5" />,
+      state: modelLoaded ? "ok" : "demo",
+      detail: modelLoaded ? "Model loaded" : "Demo rule only",
+    },
+  ];
+
+  const stateMeta: Record<RowState, { dot: string; label: string; badge: "success" | "secondary" | "destructive" }> = {
+    ok: { dot: "bg-emerald-500", label: "Connected", badge: "success" },
+    idle: { dot: "bg-amber-500", label: "Idle", badge: "secondary" },
+    off: { dot: "bg-slate-300", label: "Disconnected", badge: "destructive" },
+    demo: { dot: "bg-sky-500", label: "Simulated", badge: "secondary" },
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <PlugZap className="h-4 w-4 text-solar-600" /> System connectivity
+        </CardTitle>
+        <CardDescription>Live state of each part of the prototype</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-slate-50/80 px-3 py-2">
+          <span className="text-[11px] font-medium text-slate-500">Current operating mode</span>
+          <OperatingModeBadge mode={status?.operating_mode ?? "HARDWARE OFFLINE"} />
+        </div>
+
+        <ul className="space-y-2.5">
+          {rows.map((r) => {
+            const meta = stateMeta[r.state];
+            return (
+              <li key={r.label} className="flex items-center justify-between gap-2 text-xs">
+                <span className="flex min-w-0 items-center gap-2 text-slate-600">
+                  <span className="text-slate-400">{r.icon}</span>
+                  <span className="truncate">{r.label}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="hidden text-[10px] text-slate-400 sm:inline">{r.detail}</span>
+                  <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                  <Badge variant={meta.badge} size="sm">{meta.label}</Badge>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
+        {simulated && (
+          <p className="rounded-md bg-sky-50 px-2.5 py-2 text-[10px] leading-relaxed text-sky-900">
+            Demo mode: simulated parts are labelled and are not measurements from the physical prototype.
+          </p>
+        )}
+
+        <Button asChild variant="outline" size="sm" className="w-full">
+          <Link to="/activity">Open activity history</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function OverviewPage() {
   const { status, statusError, refreshStatus } = useSystem();
   const model = status?.model;
@@ -198,6 +526,12 @@ export default function OverviewPage() {
       )}
 
       <MetricRow />
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <ConditionCard />
+        <DecisionCard />
+        <ConnectivityCard />
+      </div>
     </div>
   );
 }
